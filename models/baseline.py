@@ -3,15 +3,14 @@
 Notation of the essential variables follows the manuscript to improve the readability.
 '''
 
-from numpy import append, arange, array, int32, linspace, zeros
+from numpy import append, arange, array, int32, zeros
 from numpy import sum as nsum
 from numpy import max as nmax
 from scipy.sparse import csr_matrix, eye
 from scipy.sparse.linalg import spsolve
-from pickle import dump
 
 
-class ModelSetup:
+class BasicModelSetup:
     '''This class holds all the fixed parameters of the model'''
     def __init__(self):
         # From 2001 UK census the percentages of households from size 1 to 8 are:
@@ -166,8 +165,9 @@ class ModelSetup:
         self.tint = 10.0                     # Time at which we neglect imports
 
 
-class BaselineModel:
-    '''Baseline model for household isolation of COVID-19
+class IndividualIsolationModel:
+    '''Individual isolation assumes that sympotomatic cases self-isolate and
+    cease transmission outside of the household.
     '''
     def __init__(self, setup, epsilon, alpha_c):
         self.compliance = alpha_c
@@ -186,11 +186,12 @@ class BaselineModel:
             self.prev[ti] = (setup.ii @ q0)
             if ti > 0:
                 self.pdi[ti] = \
-                    self.pdi[ti-1] + (c * self.prev[ti]) * setup.h
+                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * setup.h
             rse = \
                 irm * setup.import_rate \
                 + setup.beta_p * (setup.pp @ q0) \
                 + (1.0 - alpha_c) * setup.beta_i * self.prev[ti]
+
             if setup.dist_start <= t <= setup.dist_end:
                 rse = rse * (1.0 - epsilon)
             MM = \
@@ -227,27 +228,86 @@ class BaselineModel:
             label=label,
             c=colour)
 
+    def peak_ratio(self, other):
+        return nmax(self.prev)/nmax(other.prev)
+
     @property
     def peak_value(self):
         return (self.setup.Npop / self.setup.nbar) * nmax(self.prev)
 
     @property
+    def persdays(self):
+        return (self.setup.Npop / self.setup.nbar) * self.pdi[-2]
+
+    @property
     def max_person_days_of_isolation(self):
         return (self.setup.Npop / self.setup.nbar) * nmax(self.pdi)
 
-if __name__ == '__main__':
-    comply_range = linspace(0.0, 1.0, 6)
-    globred_range = array([0.0, 0.25, 0.5, 0.75])
 
-    msg = 'Done global reduction range {0:d} of {1:d} and compliange range {2:d} of {3:d}'
-    setup = ModelSetup()
-    models = []
-    for ig, g in enumerate(globred_range):
-        compliance_runs = []
-        for ic, c in enumerate(comply_range):
-            compliance_runs.append(BaselineModel(setup, g, c))
-            print(msg.format(ig + 1, len(globred_range), ic + 1, len(comply_range)))
-        models.append(compliance_runs)
+class WeakHosehouldIsolationModel:
+    '''Weak household isolation model assumes'''
+    def __init__(self, setup, epsilon, alpha_c):
+        self.compliance = alpha_c
+        self.global_reduction = epsilon
+        self.setup = setup
 
-    with open('outputs.pkl', 'wb') as f:
-        dump(models, f)
+        self.prev = zeros(len(setup.trange))
+        self.pdi = zeros(len(setup.trange))     # Person-days in isolation
+        prav = zeros(setup.nmax)    # Probability of avoiding by household size
+
+        irm = 1.0
+        q0 = zeros(setup.imax)
+        for n in range(1,setup.nmax+1):
+            q0[setup.s2i[n-1,n,0,0,0]] = setup.weights[n-1]
+        for ti, t in enumerate(setup.trange):
+            self.prev[t] = (setup.ii @ q0)
+            if (t>0):
+                self.pdi[t] = \
+                    self.pdi[ti-1] + (alpha_c * self.prev[t]) * setup.h
+                
+            rse = \
+                irm * setup.import_rate \
+                + (1.0 - alpha_c) * (
+                    setup.beta_p * (setup.pp @ q0)
+                    + setup.beta_i*(self.prev[t])) \
+                + alpha_c * setup.beta_p * (setup.ptilde @ q0)
+        
+            if setup.dist_start <= t <= setup.dist_end:
+                rse = rse*(1.0 - epsilon)
+            
+            Ise = array([],dtype=int32)
+            Jse = array([],dtype=int32)
+            Vse = array([])
+            for n in range(1,nmax+1):
+                for s in range(0,n+1):
+                    for e in range(0,n+1-s):
+                        for p in range(0,n+1-s-e):
+                            for i in range(0,n+1-s-e-p):
+                                I = setup.s2i[n-1,s,e,p,i]
+                                if (s>0):
+                                    Ise = append(Ise, I)
+                                    Jse = append(Jse, setup.s2i[n-1,s-1,e+1,p,i])
+                                    if (i==0):
+                                        val = float(s)
+                                    else:
+                                        val = (1.0-comply_range[c])*float(s)
+                                    Vse = append(Vse,val)
+                                    Ise = append(Ise,I)
+                                    Jse = append(Jse,I)
+                                    Vse = append(Vse,-val)  
+            Mse = sparse.csr_matrix((Vse, (Ise, Jse)), (imax, imax))
+            
+            MM = rse*Mse + rep*Mep + rpi*Mpi + rir*Mir + tau_p*Mse_p + tau_i*Mse_i
+            qh = sparse.linalg.spsolve(Imat - h*MM.T, q0)
+            q0 = qh
+            if (trange[t] >= tint):
+                irm = 0.0
+
+        for n in range(1,nmax+1):
+            for s in range(0,n+1):
+                for e in range(0,n+1-s):
+                    for p in range(0,n+1-s-e):
+                        for i in range(0,n+1-s-e-p):
+                            prav[n-1,g,c] += s*q0[s2i[n-1,s,e,p,i]]
+            prav[n-1,g,c] *= 1.0/(n*weights[n-1])
+
