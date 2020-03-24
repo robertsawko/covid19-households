@@ -1,222 +1,253 @@
-'''The baseline model for household isolation of COVID-19'''
-import numpy as np
-from numpy import array, linspace
+'''The baseline model for household isolation of COVID-19
+
+Notation of the essential variables follows the manuscript to improve the readability.
+'''
+
+from numpy import append, arange, array, int32, linspace, zeros
 from numpy import sum as nsum
+from numpy import max as nmax
 from scipy.sparse import csr_matrix, eye
 from scipy.sparse.linalg import spsolve
 from pickle import dump
 
 
 class ModelSetup:
+    '''This class holds all the fixed parameters of the model'''
     def __init__(self):
         # From 2001 UK census the percentages of households from size 1 to 8 are:
-        self.pages = array([
+        pages = array([
             30.28, 34.07, 15.51, 13.32, 4.88, 1.41, 0.33, 0.20])
 
-# From 2001 UK census the percentages of households from size 1 to 8 are:
-pages = array([
-    30.28, 34.07, 15.51, 13.32, 4.88, 1.41, 0.33, 0.20])
+        self.weights = pages / nsum(pages)
+        self.nmax = len(self.weights)
+        self.nbar = self.weights @ arange(1, self.nmax + 1)
 
-weights = pages / nsum(pages)
-nmax = len(weights)
-nbar = weights @ np.arange(1, nmax + 1)
+        # INTERPRETABLE PARAMETERS:
+        latent_period = 5.0     # Days in E class before becoming infectious
+        prodrome_period = 3.0   # Days infectious but not symptomatic
+        infectious_period = 4.0 # Days infectious and symptomatic
+        RGp = 0.5               # Contribution to R0 outside the household from pre-symptomatic
+        RGi = 1.0                   # Contribution to R0 outside the household during symptomatic
+        eta = 0.8                   # Parameter of the Cauchemez model: HH transmission ~ n^(-eta)
+        self.import_rate = 0.001    # International importation rate
+        self.Npop = 5.6e7       # Total population
+        SAPp = 0.4              # Secondary attack probability for a two-person household with one susceptible and one prodrome
+        SAPi = 0.8              # Secondary attack probability for a two-person household with one susceptible and one infective
+        self.dist_start = 21         # Start of social distancing
+        self.dist_end = 42           # End of social distancing
 
-# INTERPRETABLE PARAMETERS:
-latent_period = 5.0     # Days in E class before becoming infectious
-prodrome_period = 3.0   # Days infectious but not symptomatic
-infectious_period = 4.0 # Days infectious and symptomatic
-RGp = 0.5               # Contribution to R0 outside the household from pre-symptomatic
-RGi = 1.0               # Contribution to R0 outside the household during symptomatic
-eta = 0.8               # Parameter of the Cauchemez model: HH transmission ~ n^(-eta)
-import_rate = 0.001     # International importation rate
-Npop = 5.6e7            # Total population
-SAPp = 0.4              # Secondary attack probability for a two-person household with one susceptible and one prodrome
-SAPi = 0.8              # Secondary attack probability for a two-person household with one susceptible and one infective
-dist_start = 21         # Start of social distancing
-dist_end = 42           # End of social distancing
+        self.s2i = zeros((
+            self.nmax+1, self.nmax+1, self.nmax+1, self.nmax+1, self.nmax+1),
+            dtype=int32)
 
-s2i = np.zeros((nmax+1, nmax+1, nmax+1, nmax+1, nmax+1), dtype=np.int32)
+        k=0
+        for n in range(1, self.nmax+1):
+            for s in range(0, n+1):
+                for e in range(0, n+1-s):
+                    for p in range(0, n+1-s-e):
+                        for i in range(0, n+1-s-e-p):
+                            self.s2i[n-1, s, e, p, i] = k
+                            k += 1
+        self.imax = k
 
-k=0
-for n in range(1, nmax+1):
-    for s in range(0, n+1):
-        for e in range(0, n+1-s):
-            for p in range(0, n+1-s-e):
-                for i in range(0, n+1-s-e-p):
-                    s2i[n-1, s, e, p, i] = k
-                    k += 1
-imax = k
+        # Initialise the indices for sparse array generation
 
-# Initialise the indices for sparse array generation
+        Ise = array([], dtype=int32)
+        Jse = array([], dtype=int32)
+        Vse = array([])
 
-Ise = np.array([],dtype=np.int32)
-Jse = np.array([],dtype=np.int32)
-Vse = np.array([])
+        Ise_p = array([], dtype=int32)
+        Jse_p = array([], dtype=int32)
+        Vse_p = array([])
 
-Ise_p = np.array([], dtype=np.int32)
-Jse_p = np.array([], dtype=np.int32)
-Vse_p = np.array([])
+        Ise_i = array([], dtype=int32)
+        Jse_i = array([], dtype=int32)
+        Vse_i = array([])
 
-Ise_i = np.array([], dtype=np.int32)
-Jse_i = np.array([], dtype=np.int32)
-Vse_i = np.array([])
+        Iep = array([], dtype=int32)
+        Jep = array([], dtype=int32)
+        Vep = array([])
 
-Iep = np.array([], dtype=np.int32)
-Jep = np.array([], dtype=np.int32)
-Vep = np.array([])
+        Ipi = array([],dtype=int32)
+        Jpi = array([], dtype=int32)
+        Vpi = array([])
 
-Ipi = np.array([],dtype=np.int32)
-Jpi = np.array([], dtype=np.int32)
-Vpi = np.array([])
+        Iir = array([], dtype=int32)
+        Jir = array([], dtype=int32)
+        Vir = array([])
 
-Iir = np.array([], dtype=np.int32)
-Jir = np.array([], dtype=np.int32)
-Vir = np.array([])
+        self.ii = zeros(self.imax)
+        self.pp = zeros(self.imax)
+        ptilde = zeros(self.imax)
 
-ii = np.zeros(imax)
-pp = np.zeros(imax)
-ptilde = np.zeros(imax)
+        for n in range(1, self.nmax + 1):
+            for s in range(0, n+1):
+                for e in range(0, n+1-s):
+                    for p in range(0, n+1-s-e):
+                        for i in range(0, n+1-s-e-p):
+                            I = self.s2i[n-1, s, e, p, i]
+                            
+                            self.ii[I] = float(i)
+                            self.pp[I] = float(p)
+                            
+                            if i==0:
+                                ptilde[I] = float(p)
+                            
+                            if s > 0:
+                                Ise = append(Ise, I)
+                                Jse = append(Jse, self.s2i[n-1,s-1,e+1,p,i])
+                                val = float(s)
+                                Vse = append(Vse,val)
+                                Ise = append(Ise,I)
+                                Jse = append(Jse,I)
+                                Vse = append(Vse,-val)   
+                            if (s > 0) and (p > 0):
+                                Ise_p = append(Ise_p, I)
+                                Jse_p = append(Jse_p, self.s2i[n-1,s-1,e+1,p,i])
+                                val = float(s*p)/(float(n)**(-eta)) # CAUCHEMEZ MODEL
+                                Vse_p = append(Vse_p,val)
+                                Ise_p = append(Ise_p,I)
+                                Jse_p = append(Jse_p,I)
+                                Vse_p = append(Vse_p,-val)      
+                            if (s > 0) and (i > 0):
+                                Ise_i = append(Ise_i, I)
+                                Jse_i = append(Jse_i, self.s2i[n-1,s-1,e+1,p,i])
+                                val = float(s*i)/(float(n)**(-eta)) # CAUCHEMEZ MODEL
+                                Vse_i = append(Vse_i,val)
+                                Ise_i = append(Ise_i,I)
+                                Jse_i = append(Jse_i,I)
+                                Vse_i = append(Vse_i,-val)                   
+                            if e > 0:
+                                Iep = append(Iep, I)
+                                Jep = append(Jep, self.s2i[n-1,s,e-1,p+1,i])
+                                val = float(e)
+                                Vep = append(Vep,val)
+                                Iep = append(Iep,I)
+                                Jep = append(Jep,I)
+                                Vep = append(Vep,-val)
+                            if (p>0):
+                                Ipi = append(Ipi, I)
+                                Jpi = append(Jpi, self.s2i[n-1,s,e,p-1,i+1])
+                                val = float(p)
+                                Vpi = append(Vpi,val)
+                                Ipi = append(Ipi,I)
+                                Jpi = append(Jpi,I)
+                                Vpi = append(Vpi,-val)
+                            if (i>0):
+                                Iir = append(Iir, I)
+                                Jir = append(Jir, self.s2i[n-1,s,e,p,i-1])
+                                val = float(i)
+                                Vir = append(Vir,val)
+                                Iir = append(Iir,I)
+                                Jir = append(Jir,I)
+                                Vir = append(Vir,-val)
 
-for n in range(1,nmax+1):
-    for s in range(0, n+1):
-        for e in range(0, n+1-s):
-            for p in range(0, n+1-s-e):
-                for i in range(0, n+1-s-e-p):
-                    I = s2i[n-1, s, e, p, i]
-                    
-                    ii[I] = float(i)
-                    pp[I] = float(p)
-                    
-                    if i==0:
-                        ptilde[I] = float(p)
-                    
-                    if s > 0:
-                        Ise = np.append(Ise,I)
-                        Jse = np.append(Jse,s2i[n-1,s-1,e+1,p,i])
-                        val = float(s)
-                        Vse = np.append(Vse,val)
-                        Ise = np.append(Ise,I)
-                        Jse = np.append(Jse,I)
-                        Vse = np.append(Vse,-val)   
-                    if (s > 0) and (p > 0):
-                        Ise_p = np.append(Ise_p,I)
-                        Jse_p = np.append(Jse_p,s2i[n-1,s-1,e+1,p,i])
-                        val = float(s*p)/(float(n)**(-eta)) # CAUCHEMEZ MODEL
-                        Vse_p = np.append(Vse_p,val)
-                        Ise_p = np.append(Ise_p,I)
-                        Jse_p = np.append(Jse_p,I)
-                        Vse_p = np.append(Vse_p,-val)      
-                    if ((s>0) and (i>0)):
-                        Ise_i = np.append(Ise_i,I)
-                        Jse_i = np.append(Jse_i,s2i[n-1,s-1,e+1,p,i])
-                        val = float(s*i)/(float(n)**(-eta)) # CAUCHEMEZ MODEL
-                        Vse_i = np.append(Vse_i,val)
-                        Ise_i = np.append(Ise_i,I)
-                        Jse_i = np.append(Jse_i,I)
-                        Vse_i = np.append(Vse_i,-val)                   
-                    if (e>0):
-                        Iep = np.append(Iep,I)
-                        Jep = np.append(Jep,s2i[n-1,s,e-1,p+1,i])
-                        val = float(e)
-                        Vep = np.append(Vep,val)
-                        Iep = np.append(Iep,I)
-                        Jep = np.append(Jep,I)
-                        Vep = np.append(Vep,-val)
-                    if (p>0):
-                        Ipi = np.append(Ipi,I)
-                        Jpi = np.append(Jpi,s2i[n-1,s,e,p-1,i+1])
-                        val = float(p)
-                        Vpi = np.append(Vpi,val)
-                        Ipi = np.append(Ipi,I)
-                        Jpi = np.append(Jpi,I)
-                        Vpi = np.append(Vpi,-val)
-                    if (i>0):
-                        Iir = np.append(Iir,I)
-                        Jir = np.append(Jir,s2i[n-1,s,e,p,i-1])
-                        val = float(i)
-                        Vir = np.append(Vir,val)
-                        Iir = np.append(Iir,I)
-                        Jir = np.append(Jir,I)
-                        Vir = np.append(Vir,-val)
+        matrix_size = (self.imax, self.imax)
+        self.Mse = csr_matrix((Vse, (Ise, Jse)), matrix_size)
+        self.Mse_p = csr_matrix((Vse_p, (Ise_p, Jse_p)), matrix_size)
+        self.Mse_i = csr_matrix((Vse_i, (Ise_i, Jse_i)), matrix_size)
+        self.Mep = csr_matrix((Vep, (Iep, Jep)), matrix_size)
+        self.Mpi = csr_matrix((Vpi, (Ipi, Jpi)), matrix_size)
+        self.Mir = csr_matrix((Vir, (Iir, Jir)), matrix_size)
 
-Mse = csr_matrix((Vse, (Ise, Jse)), (imax, imax))
-Mse_p = csr_matrix((Vse_p, (Ise_p, Jse_p)), (imax, imax))
-Mse_i = csr_matrix((Vse_i, (Ise_i, Jse_i)), (imax, imax))
-Mep = csr_matrix((Vep, (Iep, Jep)), (imax, imax))
-Mpi = csr_matrix((Vpi, (Ipi, Jpi)), (imax, imax))
-Mir = csr_matrix((Vir, (Iir, Jir)), (imax, imax))
+        self.rep = 1.0 / latent_period
+        self.rpi = 1.0 / prodrome_period
+        self.rir = 1.0 / infectious_period
+        self.beta_p = RGp / prodrome_period
+        self.beta_i = RGi / infectious_period
+        self.tau_p = (SAPp * self.rpi * (2.0**eta)) / (1.0 - SAPp)
+        self.tau_i = (SAPi * self.rir * (2.0**eta)) / (1.0 - SAPi)
 
-rep = 1.0 / latent_period
-rpi = 1.0 / prodrome_period
-rir = 1.0 / infectious_period
-beta_p = RGp / prodrome_period
-beta_i = RGi / infectious_period
-tau_p = (SAPp*rpi*(2.0**eta))/(1.0-SAPp)
-tau_i = (SAPi*rir*(2.0**eta))/(1.0-SAPi)
+        # 0.04 is approximately an hour timestep for the implicit Euler numerical method
+        self.h = 0.04
+        self.Imat = eye(*matrix_size)
 
-# 0.04 is approximately an hour timestep for the implicit Euler numerical method
-h = 0.04
-Imat = eye(imax,imax)
+        self.trange = arange(0, 180, self.h)
+        self.tint = 10.0                     # Time at which we neglect imports
 
-# 0.04 is approximately an hour timestep for the implicit Euler numerical method
-h = 0.04
-Imat = eye(imax,imax)
 
-trange = np.arange(0, 180, h)
-tend = len(trange)
+class BaselineModel:
+    '''Baseline model for household isolation of COVID-19
+    '''
+    def __init__(self, setup, epsilon, alpha_c):
+        self.compliance = alpha_c
+        self.global_reduction = epsilon
+        self.setup = setup
 
-comply_range = linspace(0.0, 1.0, 6)
-globred_range = array([0.0, 0.25, 0.5, 0.75])
+        self.prev = zeros(len(setup.trange))
+        self.pdi = zeros(len(setup.trange))     # Person-days in isolation
+        prav = zeros(setup.nmax)    # Probability of avoiding by household size
 
-lc = len(comply_range)
-lg = len(globred_range)
-
-prev = np.zeros((lg,lc,tend))
-tint = 10.0 # Time at which we neglect imports
-pdi = np.zeros((lg,lc,tend)) # Person-days in isolation
-prav = np.zeros((nmax,lg,lc)) # Probability of avoiding by household size
-
-for g in range(0, lg):
-    for c in range(0, lc):
         irm = 1.0
-        q0 = np.zeros(imax)
-        for n in range(1, nmax+1):
-            q0[s2i[n-1,n,0,0,0]] = weights[n-1]
-        for t in range(0, tend):
-            prev[g, c, t] = (ii @ q0)
-            if t > 0:
-                pdi[g, c, t] = \
-                    pdi[g, c, t-1] + (comply_range[c] * prev[g,c,t]) * h
+        q0 = zeros(setup.imax)
+        for n in range(1, setup.nmax+1):
+            q0[setup.s2i[n-1, n, 0, 0, 0]] = setup.weights[n - 1]
+        for ti, t in enumerate(setup.trange):
+            self.prev[ti] = (setup.ii @ q0)
+            if ti > 0:
+                self.pdi[ti] = \
+                    self.pdi[ti-1] + (c * self.prev[ti]) * setup.h
             rse = \
-                irm * import_rate \
-                + beta_p * (pp @ q0) \
-                + (1.0 - comply_range[c]) * beta_i * (prev[g, c, t])
-            if ((trange[t] >= dist_start) and (trange[t] <= dist_end)):
-                rse = rse*(1.0 - globred_range[g])
+                irm * setup.import_rate \
+                + setup.beta_p * (setup.pp @ q0) \
+                + (1.0 - alpha_c) * setup.beta_i * self.prev[ti]
+            if setup.dist_start <= t <= setup.dist_end:
+                rse = rse * (1.0 - epsilon)
             MM = \
-                rse * Mse \
-                + rep * Mep \
-                + rpi * Mpi \
-                + rir * Mir \
-                + tau_p * Mse_p \
-                + tau_i * Mse_i
-            qh = spsolve(Imat - h * MM.T, q0)
+                rse * setup.Mse \
+                + setup.rep * setup.Mep \
+                + setup.rpi * setup.Mpi \
+                + setup.rir * setup.Mir \
+                + setup.tau_p * setup.Mse_p \
+                + setup.tau_i * setup.Mse_i
+            qh = spsolve(setup.Imat - setup.h * MM.T, q0)
             q0 = qh
-            if (trange[t] >= tint):
+            if (t >= setup.tint):
                 irm = 0.0
 
-        for n in range(1,nmax+1):
+        for n in range(1, setup.nmax+1):
             for s in range(0,n+1):
                 for e in range(0,n+1-s):
                     for p in range(0,n+1-s-e):
                         for i in range(0,n+1-s-e-p):
-                            prav[n-1,g,c] += s*q0[s2i[n-1,s,e,p,i]]
-            prav[n-1,g,c] *= 1.0/(n*weights[n-1])
+                            prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
+            prav[n - 1] *= 1.0 /(n * setup.weights[n-1])
         
-        print('Done global reduction range ' + str(g+1) + ' of ' + str(lg) + ' and compliance range ' + str(c+1) + ' of ' + str(lc))
+    def plot_cases(self, axes, label, colour):
+        axes.plot(
+            self.setup.trange,
+            (self.setup.Npop / self.setup.nbar) * self.prev,
+            label=label,
+            c=colour)
 
+    def plot_person_days_of_isolation(self, axes, label, colour):
+        axes.plot(
+            self.setup.trange,
+            (self.setup.Npop / self.setup.nbar) * self.pdi,
+            label=label,
+            c=colour)
 
-with open('outputs.pkl', 'wb') as f:
-    dump([
-        lg, lc, trange, prev, nbar, Npop, comply_range,
-        globred_range, tend, dist_start, dist_end, pdi], f)
+    @property
+    def peak_value(self):
+        return (self.setup.Npop / self.setup.nbar) * nmax(self.prev)
+
+    @property
+    def max_person_days_of_isolation(self):
+        return (self.setup.Npop / self.setup.nbar) * nmax(self.pdi)
+
+if __name__ == '__main__':
+    comply_range = linspace(0.0, 1.0, 6)
+    globred_range = array([0.0, 0.25, 0.5, 0.75])
+
+    msg = 'Done global reduction range {0:d} of {1:d} and compliange range {2:d} of {3:d}'
+    setup = ModelSetup()
+    models = []
+    for ig, g in enumerate(globred_range):
+        compliance_runs = []
+        for ic, c in enumerate(comply_range):
+            compliance_runs.append(BaselineModel(setup, g, c))
+            print(msg.format(ig + 1, len(globred_range), ic + 1, len(comply_range)))
+        models.append(compliance_runs)
+
+    with open('outputs.pkl', 'wb') as f:
+        dump(models, f)
