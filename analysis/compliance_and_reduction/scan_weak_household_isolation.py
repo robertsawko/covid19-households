@@ -4,7 +4,7 @@
 '''
 from numpy import array, linspace
 from pickle import dump
-from models.household import IndividualIsolationModel, BasicModelSetup
+from models.household import WeakHouseholdIsolationModel, BasicModelSetup
 
 if __name__ == '__main__':
     comply_range = linspace(0.0, 1.0, 6)
@@ -17,10 +17,10 @@ if __name__ == '__main__':
     for ig, g in enumerate(globred_range):
         compliance_runs = []
         for ic, c in enumerate(comply_range):
-            compliance_runs.append(IndividualIsolationModel(setup, g, c))
+            compliance_runs.append(WeakHouseholdIsolationModel(setup, g, c))
             print(msg.format(ig + 1, len(globred_range), ic + 1, len(comply_range)))
         models.append(compliance_runs)
 
-    with open('outputs.pkl', 'wb') as f:
+    with open('weak_household_outputs.pkl', 'wb') as f:
         dump(models, f)
 

@@ -2,7 +2,7 @@
 
 Notation of the essential variables follows the manuscript to improve the readability.
 '''
-
+from abc import ABC
 from numpy import append, arange, array, int32, zeros
 from numpy import sum as nsum
 from numpy import max as nmax
@@ -50,7 +50,6 @@ class BasicModelSetup:
         self.imax = k
 
         # Initialise the indices for sparse array generation
-
         Ise = array([], dtype=int32)
         Jse = array([], dtype=int32)
         Vse = array([])
@@ -77,7 +76,7 @@ class BasicModelSetup:
 
         self.ii = zeros(self.imax)
         self.pp = zeros(self.imax)
-        ptilde = zeros(self.imax)
+        self.ptilde = zeros(self.imax)
 
         for n in range(1, self.nmax + 1):
             for s in range(0, n+1):
@@ -85,36 +84,35 @@ class BasicModelSetup:
                     for p in range(0, n+1-s-e):
                         for i in range(0, n+1-s-e-p):
                             I = self.s2i[n-1, s, e, p, i]
-                            
                             self.ii[I] = float(i)
                             self.pp[I] = float(p)
                             
                             if i==0:
-                                ptilde[I] = float(p)
+                                self.ptilde[I] = float(p)
                             
                             if s > 0:
                                 Ise = append(Ise, I)
-                                Jse = append(Jse, self.s2i[n-1,s-1,e+1,p,i])
+                                Jse = append(Jse, self.s2i[n-1, s-1, e+1, p, i])
                                 val = float(s)
-                                Vse = append(Vse,val)
-                                Ise = append(Ise,I)
-                                Jse = append(Jse,I)
-                                Vse = append(Vse,-val)   
+                                Vse = append(Vse, val)
+                                Ise = append(Ise, I)
+                                Jse = append(Jse, I)
+                                Vse = append(Vse, -val)   
                             if (s > 0) and (p > 0):
                                 Ise_p = append(Ise_p, I)
                                 Jse_p = append(Jse_p, self.s2i[n-1,s-1,e+1,p,i])
                                 val = float(s*p)/(float(n)**(-eta)) # CAUCHEMEZ MODEL
-                                Vse_p = append(Vse_p,val)
-                                Ise_p = append(Ise_p,I)
-                                Jse_p = append(Jse_p,I)
-                                Vse_p = append(Vse_p,-val)      
+                                Vse_p = append(Vse_p, val)
+                                Ise_p = append(Ise_p, I)
+                                Jse_p = append(Jse_p, I)
+                                Vse_p = append(Vse_p, -val)      
                             if (s > 0) and (i > 0):
                                 Ise_i = append(Ise_i, I)
                                 Jse_i = append(Jse_i, self.s2i[n-1,s-1,e+1,p,i])
                                 val = float(s*i)/(float(n)**(-eta)) # CAUCHEMEZ MODEL
-                                Vse_i = append(Vse_i,val)
-                                Ise_i = append(Ise_i,I)
-                                Jse_i = append(Jse_i,I)
+                                Vse_i = append(Vse_i, val)
+                                Ise_i = append(Ise_i, I)
+                                Jse_i = append(Jse_i, I)
                                 Vse_i = append(Vse_i,-val)                   
                             if e > 0:
                                 Iep = append(Iep, I)
@@ -124,7 +122,7 @@ class BasicModelSetup:
                                 Iep = append(Iep,I)
                                 Jep = append(Jep,I)
                                 Vep = append(Vep,-val)
-                            if (p>0):
+                            if p > 0:
                                 Ipi = append(Ipi, I)
                                 Jpi = append(Jpi, self.s2i[n-1,s,e,p-1,i+1])
                                 val = float(p)
@@ -132,7 +130,7 @@ class BasicModelSetup:
                                 Ipi = append(Ipi,I)
                                 Jpi = append(Jpi,I)
                                 Vpi = append(Vpi,-val)
-                            if (i>0):
+                            if i > 0:
                                 Iir = append(Iir, I)
                                 Jir = append(Jir, self.s2i[n-1,s,e,p,i-1])
                                 val = float(i)
@@ -141,13 +139,13 @@ class BasicModelSetup:
                                 Jir = append(Jir,I)
                                 Vir = append(Vir,-val)
 
-        matrix_size = (self.imax, self.imax)
-        self.Mse = csr_matrix((Vse, (Ise, Jse)), matrix_size)
-        self.Mse_p = csr_matrix((Vse_p, (Ise_p, Jse_p)), matrix_size)
-        self.Mse_i = csr_matrix((Vse_i, (Ise_i, Jse_i)), matrix_size)
-        self.Mep = csr_matrix((Vep, (Iep, Jep)), matrix_size)
-        self.Mpi = csr_matrix((Vpi, (Ipi, Jpi)), matrix_size)
-        self.Mir = csr_matrix((Vir, (Iir, Jir)), matrix_size)
+        self.matrix_size = (self.imax, self.imax)
+        self.Mse = csr_matrix((Vse, (Ise, Jse)), self.matrix_size)
+        self.Mse_p = csr_matrix((Vse_p, (Ise_p, Jse_p)), self.matrix_size)
+        self.Mse_i = csr_matrix((Vse_i, (Ise_i, Jse_i)), self.matrix_size)
+        self.Mep = csr_matrix((Vep, (Iep, Jep)), self.matrix_size)
+        self.Mpi = csr_matrix((Vpi, (Ipi, Jpi)), self.matrix_size)
+        self.Mir = csr_matrix((Vir, (Iir, Jir)), self.matrix_size)
 
         self.rep = 1.0 / latent_period
         self.rpi = 1.0 / prodrome_period
@@ -159,13 +157,48 @@ class BasicModelSetup:
 
         # 0.04 is approximately an hour timestep for the implicit Euler numerical method
         self.h = 0.04
-        self.Imat = eye(*matrix_size)
+        self.Imat = eye(*self.matrix_size)
 
         self.trange = arange(0, 180, self.h)
         self.tint = 10.0                     # Time at which we neglect imports
 
 
-class IndividualIsolationModel:
+class HouseholdModel(ABC):
+    def __init__(self):
+        pass
+
+    def plot_cases(self, axes, label, colour):
+        axes.plot(
+            self.setup.trange,
+            (self.setup.Npop / self.setup.nbar) * self.prev,
+            label=label,
+            c=colour)
+
+    def peak_ratio(self, other):
+        return nmax(self.prev)/nmax(other.prev)
+
+    @property
+    def peak_value(self):
+        return (self.setup.Npop / self.setup.nbar) * nmax(self.prev)
+
+    @property
+    def persdays(self):
+        return (self.setup.Npop / self.setup.nbar) * self.pdi[-2]
+
+    @property
+    def max_person_days_of_isolation(self):
+        return (self.setup.Npop / self.setup.nbar) * nmax(self.pdi)
+
+    def plot_person_days_of_isolation(self, axes, label, colour):
+        axes.plot(
+            self.setup.trange,
+            (self.setup.Npop / self.setup.nbar) * self.pdi,
+            label=label,
+            c=colour)
+
+
+
+class IndividualIsolationModel(HouseholdModel):
     '''Individual isolation assumes that sympotomatic cases self-isolate and
     cease transmission outside of the household.
     '''
@@ -180,7 +213,7 @@ class IndividualIsolationModel:
 
         irm = 1.0
         q0 = zeros(setup.imax)
-        for n in range(1, setup.nmax+1):
+        for n in range(1, setup.nmax + 1):
             q0[setup.s2i[n-1, n, 0, 0, 0]] = setup.weights[n - 1]
         for ti, t in enumerate(setup.trange):
             self.prev[ti] = (setup.ii @ q0)
@@ -194,6 +227,7 @@ class IndividualIsolationModel:
 
             if setup.dist_start <= t <= setup.dist_end:
                 rse = rse * (1.0 - epsilon)
+
             MM = \
                 rse * setup.Mse \
                 + setup.rep * setup.Mep \
@@ -214,38 +248,9 @@ class IndividualIsolationModel:
                             prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
             prav[n - 1] *= 1.0 /(n * setup.weights[n-1])
         
-    def plot_cases(self, axes, label, colour):
-        axes.plot(
-            self.setup.trange,
-            (self.setup.Npop / self.setup.nbar) * self.prev,
-            label=label,
-            c=colour)
-
-    def plot_person_days_of_isolation(self, axes, label, colour):
-        axes.plot(
-            self.setup.trange,
-            (self.setup.Npop / self.setup.nbar) * self.pdi,
-            label=label,
-            c=colour)
-
-    def peak_ratio(self, other):
-        return nmax(self.prev)/nmax(other.prev)
-
-    @property
-    def peak_value(self):
-        return (self.setup.Npop / self.setup.nbar) * nmax(self.prev)
-
-    @property
-    def persdays(self):
-        return (self.setup.Npop / self.setup.nbar) * self.pdi[-2]
-
-    @property
-    def max_person_days_of_isolation(self):
-        return (self.setup.Npop / self.setup.nbar) * nmax(self.pdi)
-
-
-class WeakHosehouldIsolationModel:
-    '''Weak household isolation model assumes'''
+class WeakHouseholdIsolationModel(HouseholdModel):
+    '''Weak household isolation model assumes a compliant percentage of
+    househods will isolate if there is at least one symptomatic case'''
     def __init__(self, setup, epsilon, alpha_c):
         self.compliance = alpha_c
         self.global_reduction = epsilon
@@ -254,60 +259,66 @@ class WeakHosehouldIsolationModel:
         self.prev = zeros(len(setup.trange))
         self.pdi = zeros(len(setup.trange))     # Person-days in isolation
         prav = zeros(setup.nmax)    # Probability of avoiding by household size
-
+        # Overwrite the susceptible to exposed matrix
+        Ise = array([],dtype=int32)
+        Jse = array([],dtype=int32)
+        Vse = array([])
+        for n in range(1, setup.nmax + 1):
+            for s in range(0,n+1):
+                for e in range(0,n+1-s):
+                    for p in range(0,n+1-s-e):
+                        for i in range(0,n+1-s-e-p):
+                            I = setup.s2i[n-1,s,e,p,i]
+                            if (s>0):
+                                Ise = append(Ise, I)
+                                Jse = append(
+                                    Jse, setup.s2i[n-1,s-1,e+1,p,i])
+                                if (i==0):
+                                    val = float(s)
+                                else:
+                                    val = (1.0 - alpha_c) * float(s)
+                                Vse = append(Vse, val)
+                                Ise = append(Ise, I)
+                                Jse = append(Jse, I)
+                                Vse = append(Vse, -val)  
+        setup.Mse = csr_matrix((Vse, (Ise, Jse)), setup.matrix_size)
+            
         irm = 1.0
         q0 = zeros(setup.imax)
         for n in range(1,setup.nmax+1):
             q0[setup.s2i[n-1,n,0,0,0]] = setup.weights[n-1]
         for ti, t in enumerate(setup.trange):
-            self.prev[t] = (setup.ii @ q0)
+            self.prev[ti] = (setup.ii @ q0)
             if (t>0):
-                self.pdi[t] = \
-                    self.pdi[ti-1] + (alpha_c * self.prev[t]) * setup.h
+                self.pdi[ti] = \
+                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * setup.h
                 
             rse = \
                 irm * setup.import_rate \
                 + (1.0 - alpha_c) * (
                     setup.beta_p * (setup.pp @ q0)
-                    + setup.beta_i*(self.prev[t])) \
+                    + setup.beta_i*(self.prev[ti])) \
                 + alpha_c * setup.beta_p * (setup.ptilde @ q0)
         
             if setup.dist_start <= t <= setup.dist_end:
                 rse = rse*(1.0 - epsilon)
             
-            Ise = array([],dtype=int32)
-            Jse = array([],dtype=int32)
-            Vse = array([])
-            for n in range(1,nmax+1):
-                for s in range(0,n+1):
-                    for e in range(0,n+1-s):
-                        for p in range(0,n+1-s-e):
-                            for i in range(0,n+1-s-e-p):
-                                I = setup.s2i[n-1,s,e,p,i]
-                                if (s>0):
-                                    Ise = append(Ise, I)
-                                    Jse = append(Jse, setup.s2i[n-1,s-1,e+1,p,i])
-                                    if (i==0):
-                                        val = float(s)
-                                    else:
-                                        val = (1.0-comply_range[c])*float(s)
-                                    Vse = append(Vse,val)
-                                    Ise = append(Ise,I)
-                                    Jse = append(Jse,I)
-                                    Vse = append(Vse,-val)  
-            Mse = sparse.csr_matrix((Vse, (Ise, Jse)), (imax, imax))
-            
-            MM = rse*Mse + rep*Mep + rpi*Mpi + rir*Mir + tau_p*Mse_p + tau_i*Mse_i
-            qh = sparse.linalg.spsolve(Imat - h*MM.T, q0)
+            MM = \
+                rse * setup.Mse \
+                + setup.rep * setup.Mep \
+                + setup.rpi * setup.Mpi \
+                + setup.rir * setup.Mir \
+                + setup.tau_p * setup.Mse_p \
+                + setup.tau_i * setup.Mse_i
+            qh = spsolve(setup.Imat - setup.h * MM.T, q0)
             q0 = qh
-            if (trange[t] >= tint):
+            if (t >= setup.tint):
                 irm = 0.0
 
-        for n in range(1,nmax+1):
-            for s in range(0,n+1):
-                for e in range(0,n+1-s):
-                    for p in range(0,n+1-s-e):
-                        for i in range(0,n+1-s-e-p):
-                            prav[n-1,g,c] += s*q0[s2i[n-1,s,e,p,i]]
-            prav[n-1,g,c] *= 1.0/(n*weights[n-1])
-
+        for n in range(1, setup.nmax+1):
+            for s in range(0, n+1):
+                for e in range(0, n+1-s):
+                    for p in range(0, n+1-s-e):
+                        for i in range(0, n+1-s-e-p):
+                            prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
+            prav[n-1] *= 1.0 / (n * setup.weights[n-1])

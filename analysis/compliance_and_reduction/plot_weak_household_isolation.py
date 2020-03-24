@@ -8,7 +8,7 @@ from matplotlib.pyplot import subplots
 from pickle import load
 from models.household import IndividualIsolationModel, BasicModelSetup
 
-with open('outputs.pkl', 'rb') as f:
+with open('weak_household_outputs.pkl', 'rb') as f:
     gr_runs = load(f)
 
 no_of_global_reductions = len(gr_runs)
@@ -66,7 +66,7 @@ for ig, runs in enumerate(gr_runs):
     axes.set_ylabel('Person-Days Isolation')
     axes.title.set_text('Global Reduction {:.0f}%'.format(100*baseline.global_reduction))
 fig.tight_layout()
-fig.savefig('./time_series.pdf')
+fig.savefig('./time_series_weak.pdf')
 
 fig, axis = subplots(1, 2, figsize=(8,3.75))
 comply_range = [m.compliance for m in gr_runs[0]]
@@ -89,4 +89,4 @@ axis[1].title.set_text('Individual isolation: Cost')
 axis[1].set_xlim([0, 1])
 axis[1].set_ylim([0, ceil(nmax(persdays))])
 fig.tight_layout()
-fig.savefig('./mit_costs.pdf')
+fig.savefig('./mit_costs_weak.pdf')
