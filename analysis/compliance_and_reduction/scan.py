@@ -3,8 +3,9 @@
     - compliance
 '''
 from numpy import array, linspace
-from pickle import dump
-from models.household import IndividualIsolationModel, BasicModelSetup
+from dill import dump
+from models.household import BasicModelSetup, IndividualIsolationModel
+from models.household import WeakHouseholdIsolationModel
 
 if __name__ == '__main__':
     comply_range = linspace(0.0, 1.0, 6)
@@ -12,15 +13,20 @@ if __name__ == '__main__':
 
     msg = 'Done global reduction range {0:d} of {1:d} and compliange range {2:d} of {3:d}'
     setup = BasicModelSetup()
-    models = []
+    individual = []
+    weak = []
 
     for ig, g in enumerate(globred_range):
-        compliance_runs = []
+        individual_gr = []
+        weak_gr = []
         for ic, c in enumerate(comply_range):
-            compliance_runs.append(IndividualIsolationModel(setup, g, c))
+            individual_gr.append(IndividualIsolationModel(setup, g, c))
+            weak_gr.append(WeakHouseholdIsolationModel(setup, g, c))
             print(msg.format(ig + 1, len(globred_range), ic + 1, len(comply_range)))
-        models.append(compliance_runs)
+        individual.append(individual_gr)
+        weak.append(weak_gr)
 
     with open('outputs.pkl', 'wb') as f:
-        dump(models, f)
-
+        dump(individual, f)
+    with open('outputs_weak.pkl', 'wb') as f:
+        dump(weak, f)
