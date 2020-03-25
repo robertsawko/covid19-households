@@ -95,6 +95,6 @@ def plot_from_dill(suffix=''):
     fig.savefig('./mit_costs{0}.pdf'.format(suffix))
 
 if __name__ == '__main__':
-    suffixes = ['', '_weak']
+    suffixes = ['', '_weak', '_strong']
     for s in suffixes:
         plot_from_dill(s)
