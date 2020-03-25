@@ -236,8 +236,8 @@ class IndividualIsolationModel(HouseholdModel):
         self.setup = setup
 
         self.prev = zeros(len(self.setup.trange))
-        self.pdi = zeros(len(self.setup.trange))     # Person-days in isolation
-        prav = zeros(self.setup.nmax)    # Probability of avoiding by household size
+        self.pdi = zeros(len(self.setup.trange))    # Person-days in isolation
+        self.prav = zeros(self.setup.nmax)          # Probability of avoiding by household size
 
         irm = 1.0
         q0 = zeros(self.setup.imax)
@@ -273,8 +273,8 @@ class IndividualIsolationModel(HouseholdModel):
                 for e in range(0,n+1-s):
                     for p in range(0,n+1-s-e):
                         for i in range(0,n+1-s-e-p):
-                            prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
-            prav[n - 1] *= 1.0 /(n * setup.weights[n-1])
+                            self.prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
+            self.prav[n - 1] *= 1.0 /(n * setup.weights[n-1])
         
 class WeakHouseholdIsolationModel(HouseholdModel):
     '''Weak household isolation model assumes a compliant percentage of
@@ -286,7 +286,7 @@ class WeakHouseholdIsolationModel(HouseholdModel):
 
         self.prev = zeros(len(setup.trange))
         self.pdi = zeros(len(setup.trange))     # Person-days in isolation
-        prav = zeros(setup.nmax)    # Probability of avoiding by household size
+        self.prav = zeros(setup.nmax)    # Probability of avoiding by household size
         # Overwrite the susceptible to exposed matrix
         Ise = array([],dtype=int32)
         Jse = array([],dtype=int32)
@@ -348,8 +348,8 @@ class WeakHouseholdIsolationModel(HouseholdModel):
                 for e in range(0, n+1-s):
                     for p in range(0, n+1-s-e):
                         for i in range(0, n+1-s-e-p):
-                            prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
-            prav[n-1] *= 1.0 / (n * setup.weights[n-1])
+                            self.prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
+            self.prav[n-1] *= 1.0 / (n * setup.weights[n-1])
 
 class StrongHouseholdIsolationModelSetup(Setup):
     '''This object creates matrices for a household model with six indices:
@@ -511,7 +511,7 @@ class StrongHouseholdIsolationModel(HouseholdModel):
 
         self.prev = zeros(len(setup.trange))
         self.pdi = zeros(len(setup.trange))     # Person-days in isolation
-        prav = zeros(setup.nmax)    # Probability of avoiding by household size
+        self.prav = zeros(setup.nmax)    # Probability of avoiding by household size
 
         Ipi = array([], dtype=int32)
         Jpi = array([], dtype=int32)
@@ -585,5 +585,5 @@ class StrongHouseholdIsolationModel(HouseholdModel):
                     for p in range(0,n+1-s-e):
                         for i in range(0,n+1-s-e-p):
                             for f in range(0,2):
-                                prav[n-1] += s * q0[setup.s2i[n-1,s,e,p,i,f]]
-            prav[n-1] *= 1.0 / (n * setup.weights[n-1])
+                                self.prav[n-1] += s * q0[setup.s2i[n-1,s,e,p,i,f]]
+            self.prav[n-1] *= 1.0 / (n * setup.weights[n-1])

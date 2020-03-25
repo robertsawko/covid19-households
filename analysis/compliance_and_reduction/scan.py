@@ -40,5 +40,5 @@ if __name__ == '__main__':
         ('_strong', strong)]
     for suffix, results in suffix_and_result:
         with open('outputs{0}.pkl'.format(suffix), 'wb') as f:
-            dump(individual, results)
+            dump(results, f)
 

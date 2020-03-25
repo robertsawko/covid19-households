@@ -72,7 +72,6 @@ def plot_from_dill(suffix=''):
 
     fig, axis = subplots(1, 2, figsize=(8, 3.75))
     comply_range = [m.compliance for m in gr_runs[0]]
-    print(percred)
     for ig, models in enumerate(gr_runs):
         axis[0].plot(
             comply_range,
@@ -93,6 +92,27 @@ def plot_from_dill(suffix=''):
     axis[1].set_ylim([0, ceil(nmax(persdays))])
     fig.tight_layout()
     fig.savefig('./mit_costs{0}.pdf'.format(suffix))
+
+    fig, axis = subplots(2, 4, figsize=(10,4))
+    for n in range(1, unmitigated.setup.nmax+1):
+        axes = axis[(n - 1)//4, (n - 1)%4]
+        for models in gr_runs:
+            axes.plot(
+                comply_range,
+                [m.prav[n-1] for m in models],
+                label='{:.0f}%'.format(100*models[0].global_reduction))
+            axes.set_xlim([0, 1.0])
+            axes.set_ylim([0,0.5])
+            axes.set_xlabel('Compliance')
+            axes.set_ylabel('Prob(Avoid)')
+            axes.title.set_text('Household size {0:d}'.format(int(n)))
+        if n==nmax:
+            fig.legend(
+                bbox_to_anchor=(1.04,1),
+                loc="upper left",
+                title="Global Reduction")
+    fig.tight_layout()
+    fig.savefig('prob_avoid{0}.pdf'.format(suffix))
 
 if __name__ == '__main__':
     suffixes = ['', '_weak', '_strong']
