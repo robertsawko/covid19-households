@@ -3,6 +3,7 @@
     - compliance
 '''
 from numpy import array, linspace
+from copy import deepcopy
 from dill import dump
 from models.household import BasicModelSetup, IndividualIsolationModel
 from models.household import WeakHouseholdIsolationModel
@@ -14,8 +15,8 @@ if __name__ == '__main__':
     globred_range = array([0.0, 0.25, 0.5, 0.75])
 
     msg = 'Done global reduction range {0:d} of {1:d} and compliange range {2:d} of {3:d}'
-    setup = BasicModelSetup()
-    strong_setup = StrongHouseholdIsolationModelSetup()
+    setup_generic = BasicModelSetup()
+    strong_setup_generic = StrongHouseholdIsolationModelSetup()
     individual = []
     weak = []
     strong = []
@@ -25,10 +26,15 @@ if __name__ == '__main__':
         weak_gr = []
         strong_gr = []
         for ic, c in enumerate(comply_range):
-            individual_gr.append(IndividualIsolationModel(setup, g, c))
-            weak_gr.append(WeakHouseholdIsolationModel(setup, g, c))
-            strong_gr.append(StrongHouseholdIsolationModel(
-                strong_setup, g, c))
+            setup = deepcopy(setup_generic)
+            strong_setup = deepcopy(strong_setup_generic)
+            for s in [setup, strong_setup]:
+                s['compliance'] = c
+                s['global_reduction'] = g
+            # Run the models
+            individual_gr.append(IndividualIsolationModel(setup))
+            weak_gr.append(WeakHouseholdIsolationModel(setup))
+            strong_gr.append(StrongHouseholdIsolationModel(strong_setup))
             print(msg.format(ig + 1, len(globred_range), ic + 1, len(comply_range)))
         individual.append(individual_gr)
         weak.append(weak_gr)

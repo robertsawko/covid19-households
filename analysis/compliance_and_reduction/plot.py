@@ -27,8 +27,8 @@ def plot_from_dill(suffix=''):
             m = models[ic]
             m.plot_cases(
                 axes,
-                label='{:.0f}% compliance'.format(100*m.compliance),
-                colour=[0.5, 0.5, 0.5+(0.5*m.compliance)])
+                label='{:.0f}% compliance'.format(100*m.setup['compliance']),
+                colour=[0.5, 0.5, 0.5+(0.5*m.setup['compliance'])])
             percred[ig, ic] = 100.0*m.peak_ratio(unmitigated)
         baseline = models[0]
         baseline.plot_cases(
@@ -37,11 +37,11 @@ def plot_from_dill(suffix=''):
             colour=[0, 0, 0])
         yup = 1.05 * unmitigated.peak_value
         # Draw intervention lines
-        npi_begin, npi_end = baseline.setup.dist_start, baseline.setup.dist_end
-        axes.plot([npi_begin, npi_begin], [0, yup], ls='--', c='k')
-        axes.plot([npi_end, npi_end], [0,yup], ls='--', c='k')
+        npi_start, npi_end = baseline.setup['npi_start'], baseline.setup['npi_end']
+        axes.plot([npi_start, npi_start], [0, yup], ls='--', c='k')
+        axes.plot([npi_end, npi_end], [0, yup], ls='--', c='k')
 
-        axes.set_xlim([0, baseline.setup.trange[-1]])
+        axes.set_xlim([0, baseline.setup['final_time']])
         axes.set_ylim([0, yup])
         axes.set_xlabel('Time (days)')
         axes.set_ylabel('Number of Cases')
@@ -52,14 +52,14 @@ def plot_from_dill(suffix=''):
             m=models[ic]
             m.plot_person_days_of_isolation(
                 axes,
-                label='{:.0f}%'.format(100*m.compliance),
-                colour=[0.3, 0.3, 0.3 + (0.7*m.compliance)])
+                label='{:.0f}%'.format(100 * m.setup['compliance']),
+                colour=[0.3, 0.3, 0.3 + (0.7*m.setup['compliance'])])
             persdays[ig, ic] = m.persdays
         baseline.plot_person_days_of_isolation(
             axes,
             label='Baseline',
             colour=[0, 0, 0])
-        axes.set_xlim([0, baseline.setup.trange[-1]])
+        axes.set_xlim([0, baseline.setup['final_time']])
         
         axes.set_ylim([0, 1.05*models[-1].max_person_days_of_isolation])
         if (ig==0):
@@ -71,7 +71,7 @@ def plot_from_dill(suffix=''):
     fig.savefig('./time_series{0}.pdf'.format(suffix))
 
     fig, axis = subplots(1, 2, figsize=(8, 3.75))
-    comply_range = [m.compliance for m in gr_runs[0]]
+    comply_range = [m.setup['compliance'] for m in gr_runs[0]]
     for ig, models in enumerate(gr_runs):
         axis[0].plot(
             comply_range,

@@ -1,7 +1,12 @@
-'''The household isolation models for COVID-19 epidemic in the UK.
+'''The household isolation models for COVID-19 epidemic in the UK. All models
+assume:
+    * non-pharmaceutical interventions (NPI) of length T.
 
 Notation of the essential variables follows the manuscript to improve the
 readability.
+
+Note: some repetition is allowed for readability e.g. epsilon and alpha_c
+assignment are repeated in every constructor.
 '''
 from abc import ABC
 from numpy import append, arange, array, int32, zeros
@@ -9,60 +14,32 @@ from numpy import sum as nsum
 from numpy import max as nmax
 from scipy.sparse import csr_matrix, eye
 from scipy.sparse.linalg import spsolve
-
-class InterpretableParameters:
-    '''This holds fixed model parameters including spread rate and
-    intervention period'''
-    def __init__(self):
-        self.latent_period = 5.0        # Days in E class before becoming infectious
-        self.prodrome_period = 3.0      # Days infectious but not symptomatic
-        self.infectious_period = 4.0    # Days infectious and symptomatic
-        self.RGp = 0.5                  # Contribution to R0 outside the household from pre-symptomatic
-        self.RGi = 1.0                  # Contribution to R0 outside the household during symptomatic
-        self.eta = 0.8                  # Parameter of the Cauchemez model: HH transmission ~ n^(-eta)
-        self.import_rate = 0.001        # International importation rate
-        self.Npop = 5.6e7 # Total population
-        self.SAPp = 0.4 # Secondary attack probability for a two-person household with one susceptible and one prodrome
-        self.SAPi = 0.8 # Secondary attack probability for a two-person household with one susceptible and one infective
-        self.dist_start = 21 # Start of social distancing
-        self.dist_end = 42 # End of social distancing
-
-    def __repr__(self):
-        return ''
+from models.utils import DEFAULT_PARAMS
 
 class Setup(ABC):
-    def __init__(self):
-        pass
+    def __init__(self, params):
+        self.params = params
+        self.trange = arange(
+            0, params['final_time'], params['h'])
 
-    @property
-    def import_rate(self):
-        return self.params.import_rate
+    def __getitem__(self, key):
+        return self.params[key]
 
-    @property
-    def dist_start(self):
-        return self.params.dist_start
+    def __setitem__(self, key, value):
+        self.params[key] = value
 
-    @property
-    def dist_end(self):
-        return self.params.dist_end
+    def NPI_active(self, t):
+        '''Check if non-pharmaceutical interventions are active at time t'''
+        return self.params['npi_start'] <= t <= self.params['npi_end']
 
-    @property
-    def Npop(self):
-        return self.params.Npop
 
 class BasicModelSetup(Setup):
     '''This class produces matrix for a 5 compartment models'''
-    def __init__(self):
-        # From 2001 UK census the percentages of households from size 1 to 8 are:
-        pages = array([
-            30.28, 34.07, 15.51, 13.32, 4.88, 1.41, 0.33, 0.20])
-
-        self.weights = pages / nsum(pages)
+    def __init__(self, params=DEFAULT_PARAMS):
+        super().__init__(params)
+        self.weights = params['pages'] / nsum(params['pages'])
         self.nmax = len(self.weights)
         self.nbar = self.weights @ arange(1, self.nmax + 1)
-
-        params = InterpretableParameters()
-        self.params = params
 
         # A mapping of multi-index onto a linear index
         self.s2i = zeros((
@@ -130,7 +107,7 @@ class BasicModelSetup(Setup):
                             if (s > 0) and (p > 0):
                                 Ise_p = append(Ise_p, I)
                                 Jse_p = append(Jse_p, self.s2i[n-1,s-1,e+1,p,i])
-                                val = float(s*p)/(float(n)**(-params.eta)) # CAUCHEMEZ MODEL
+                                val = float(s*p)/(float(n)**(-params['eta'])) # CAUCHEMEZ MODEL
                                 Vse_p = append(Vse_p, val)
                                 Ise_p = append(Ise_p, I)
                                 Jse_p = append(Jse_p, I)
@@ -138,7 +115,7 @@ class BasicModelSetup(Setup):
                             if (s > 0) and (i > 0):
                                 Ise_i = append(Ise_i, I)
                                 Jse_i = append(Jse_i, self.s2i[n-1,s-1,e+1,p,i])
-                                val = float(s*i)/(float(n)**(-params.eta)) # CAUCHEMEZ MODEL
+                                val = float(s*i)/(float(n)**(-params['eta'])) # CAUCHEMEZ MODEL
                                 Vse_i = append(Vse_i, val)
                                 Ise_i = append(Ise_i, I)
                                 Jse_i = append(Jse_i, I)
@@ -176,31 +153,34 @@ class BasicModelSetup(Setup):
         self.Mpi = csr_matrix((Vpi, (Ipi, Jpi)), self.matrix_size)
         self.Mir = csr_matrix((Vir, (Iir, Jir)), self.matrix_size)
 
-        self.rep = 1.0 / params.latent_period
-        self.rpi = 1.0 / params.prodrome_period
-        self.rir = 1.0 / params.infectious_period
-        self.beta_p = params.RGp / params.prodrome_period
-        self.beta_i = params.RGi / params.infectious_period
+        self.rep = 1.0 / params['latent_period']
+        self.rpi = 1.0 / params['prodrome_period']
+        self.rir = 1.0 / params['infectious_period']
+        self.beta_p = params['RGp'] / params['prodrome_period']
+        self.beta_i = params['RGi'] / params['infectious_period']
         self.tau_p = (
-            params.SAPp * self.rpi * (2.0**params.eta)) / (1.0 - params.SAPp)
+            params['SAPp'] * self.rpi * (2.0**self.params['eta'])) \
+            / (1.0 - params['SAPp'])
         self.tau_i = (
-            params.SAPi * self.rir * (2.0**params.eta)) / (1.0 - params.SAPi)
+            params['SAPi'] * self.rir * (2.0**params['eta'])) \
+            / (1.0 - self.params['SAPi'])
 
-        # 0.04 is approximately an hour timestep for the implicit Euler numerical method
-        self.h = 0.04
         self.Imat = eye(*self.matrix_size)
 
-        self.trange = arange(0, 180, self.h)
-        self.tint = 10.0                     # Time at which we neglect imports
-
 class HouseholdModel(ABC):
-    def __init__(self):
-        pass
+    def __init__(self, setup):
+        self.global_reduction = setup['global_reduction']
+        self.setup = setup
+
+        self.prev = zeros(len(setup.trange))
+        self.pdi = zeros(len(setup.trange))     # Person-days in isolation
+        self.prav = zeros(setup.nmax)           # Probability of avoiding by household size
+
 
     def plot_cases(self, axes, label, colour):
         axes.plot(
             self.setup.trange,
-            (self.setup.Npop / self.setup.nbar) * self.prev,
+            (self.setup['Npop'] / self.setup.nbar) * self.prev,
             label=label,
             c=colour)
 
@@ -209,20 +189,20 @@ class HouseholdModel(ABC):
 
     @property
     def peak_value(self):
-        return (self.setup.Npop / self.setup.nbar) * nmax(self.prev)
+        return (self.setup['Npop'] / self.setup.nbar) * nmax(self.prev)
 
     @property
     def persdays(self):
-        return (self.setup.Npop / self.setup.nbar) * self.pdi[-2]
+        return (self.setup['Npop'] / self.setup.nbar) * self.pdi[-2]
 
     @property
     def max_person_days_of_isolation(self):
-        return (self.setup.Npop / self.setup.nbar) * nmax(self.pdi)
+        return (self.setup['Npop'] / self.setup.nbar) * nmax(self.pdi)
 
     def plot_person_days_of_isolation(self, axes, label, colour):
         axes.plot(
             self.setup.trange,
-            (self.setup.Npop / self.setup.nbar) * self.pdi,
+            (self.setup['Npop'] / self.setup.nbar) * self.pdi,
             label=label,
             c=colour)
 
@@ -230,14 +210,10 @@ class IndividualIsolationModel(HouseholdModel):
     '''Individual isolation assumes that sympotomatic cases self-isolate and
     cease transmission outside of the household.
     '''
-    def __init__(self, setup, epsilon, alpha_c):
-        self.compliance = alpha_c
-        self.global_reduction = epsilon
-        self.setup = setup
-
-        self.prev = zeros(len(self.setup.trange))
-        self.pdi = zeros(len(self.setup.trange))    # Person-days in isolation
-        self.prav = zeros(self.setup.nmax)          # Probability of avoiding by household size
+    def __init__(self, setup):
+        super().__init__(setup)
+        alpha_c = setup['compliance']
+        epsilon = setup['global_reduction']
 
         irm = 1.0
         q0 = zeros(self.setup.imax)
@@ -247,13 +223,13 @@ class IndividualIsolationModel(HouseholdModel):
             self.prev[ti] = (self.setup.ii @ q0)
             if ti > 0:
                 self.pdi[ti] = \
-                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * self.setup.h
+                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * self.setup['h']
             rse = \
-                irm * self.setup.import_rate \
+                irm * self.setup['import_rate'] \
                 + setup.beta_p * (setup.pp @ q0) \
                 + (1.0 - alpha_c) * setup.beta_i * self.prev[ti]
 
-            if setup.dist_start <= t <= setup.dist_end:
+            if setup.NPI_active(t):
                 rse = rse * (1.0 - epsilon)
 
             MM = \
@@ -263,9 +239,9 @@ class IndividualIsolationModel(HouseholdModel):
                 + setup.rir * setup.Mir \
                 + setup.tau_p * setup.Mse_p \
                 + setup.tau_i * setup.Mse_i
-            qh = spsolve(setup.Imat - setup.h * MM.T, q0)
+            qh = spsolve(setup.Imat - setup['h'] * MM.T, q0)
             q0 = qh
-            if (t >= setup.tint):
+            if t >= setup['tint']:
                 irm = 0.0
 
         for n in range(1, setup.nmax+1):
@@ -279,14 +255,11 @@ class IndividualIsolationModel(HouseholdModel):
 class WeakHouseholdIsolationModel(HouseholdModel):
     '''Weak household isolation model assumes a compliant percentage of
     househods will isolate if there is at least one symptomatic case'''
-    def __init__(self, setup, epsilon, alpha_c):
-        self.compliance = alpha_c
-        self.global_reduction = epsilon
-        self.setup = setup
+    def __init__(self, setup):
+        super().__init__(setup)
+        alpha_c = setup['compliance']
+        epsilon = setup['global_reduction']
 
-        self.prev = zeros(len(setup.trange))
-        self.pdi = zeros(len(setup.trange))     # Person-days in isolation
-        self.prav = zeros(setup.nmax)    # Probability of avoiding by household size
         # Overwrite the susceptible to exposed matrix
         Ise = array([],dtype=int32)
         Jse = array([],dtype=int32)
@@ -319,16 +292,16 @@ class WeakHouseholdIsolationModel(HouseholdModel):
             self.prev[ti] = (setup.ii @ q0)
             if t > 0:
                 self.pdi[ti] = \
-                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * setup.h
+                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * setup['h']
                 
             rse = \
-                irm * setup.import_rate \
+                irm * setup['import_rate'] \
                 + (1.0 - alpha_c) * (
                     setup.beta_p * (setup.pp @ q0)
                     + setup.beta_i*(self.prev[ti])) \
                 + alpha_c * setup.beta_p * (setup.ptilde @ q0)
         
-            if setup.dist_start <= t <= setup.dist_end:
+            if setup.NPI_active(t):
                 rse = rse*(1.0 - epsilon)
             
             MM = \
@@ -338,9 +311,9 @@ class WeakHouseholdIsolationModel(HouseholdModel):
                 + setup.rir * setup.Mir \
                 + setup.tau_p * setup.Mse_p \
                 + setup.tau_i * setup.Mse_i
-            qh = spsolve(setup.Imat - setup.h * MM.T, q0)
+            qh = spsolve(setup.Imat - setup['h'] * MM.T, q0)
             q0 = qh
-            if (t >= setup.tint):
+            if t >= setup['tint']:
                 irm = 0.0
 
         for n in range(1, setup.nmax+1):
@@ -356,18 +329,13 @@ class StrongHouseholdIsolationModelSetup(Setup):
     1. size         3. exposed      5. infected
     2. susceptible  4. prodromal    6. quarantined
     '''
-    def __init__(self):
+    def __init__(self, params=DEFAULT_PARAMS):
+        super().__init__(params)
 
-        # From 2001 UK census the percentages of households from size 1 to 8 are:
-        pages = array([
-            30.28, 34.07, 15.51, 13.32, 4.88, 1.41, 0.33, 0.20])
-
-        self.weights = pages / nsum(pages)
+        self.weights = params['pages'] / nsum(params['pages'])
         self.nmax = len(self.weights)
         self.nbar = self.weights @ arange(1, self.nmax + 1)
 
-        params = InterpretableParameters()
-        self.params = params
         self.s2i = zeros(
             (self.nmax+1, self.nmax+1, self.nmax+1, self.nmax+1, self.nmax+1, 2),
             dtype=int32)
@@ -383,12 +351,12 @@ class StrongHouseholdIsolationModelSetup(Setup):
         self.imax = k
         # Initialise the indices for sparse array generation
 
-        Ise = array([],dtype=int32)
-        Jse = array([],dtype=int32)
+        Ise = array([], dtype=int32)
+        Jse = array([], dtype=int32)
         Vse = array([])
 
-        Ise_p = array([],dtype=int32)
-        Jse_p = array([],dtype=int32)
+        Ise_p = array([], dtype=int32)
+        Jse_p = array([], dtype=int32)
         Vse_p = array([])
 
         Ise_i = array([],dtype=int32)
@@ -438,7 +406,7 @@ class StrongHouseholdIsolationModelSetup(Setup):
                                 if ((s>0) and (p>0)):
                                     Ise_p = append(Ise_p,I)
                                     Jse_p = append(Jse_p, self.s2i[n-1,s-1,e+1,p,i,f])
-                                    val = float(s*p)/(float(n)**(-params.eta))
+                                    val = float(s*p)/(float(n)**(-params['eta']))
                                     Vse_p = append(Vse_p,val)
                                     Ise_p = append(Ise_p,I)
                                     Jse_p = append(Jse_p,I)
@@ -446,7 +414,7 @@ class StrongHouseholdIsolationModelSetup(Setup):
                                 if ((s>0) and (i>0)):
                                     Ise_i = append(Ise_i,I)
                                     Jse_i = append(Jse_i, self.s2i[n-1,s-1,e+1,p,i,f])
-                                    val = float(s*i)/(float(n)**(-params.eta))
+                                    val = float(s*i)/(float(n)**(-params['eta']))
                                     Vse_i = append(Vse_i,val)
                                     Ise_i = append(Ise_i,I)
                                     Jse_i = append(Jse_i,I)
@@ -484,35 +452,26 @@ class StrongHouseholdIsolationModelSetup(Setup):
         self.Mir = csr_matrix((Vir, (Iir, Jir)), self.matrix_size)
         self.Mf = csr_matrix((Vf, (If, Jf)), self.matrix_size)
 
-        self.rep = 1.0 / params.latent_period
-        self.rpi = 1.0 / params.prodrome_period
-        self.rir = 1.0 / params.infectious_period
-        self.beta_p = params.RGp / params.prodrome_period
-        self.beta_i = params.RGi / params.infectious_period
+        self.rep = 1.0 / params['latent_period']
+        self.rpi = 1.0 / params['prodrome_period']
+        self.rir = 1.0 / params['infectious_period']
+        self.beta_p = params['RGp'] / params['prodrome_period']
+        self.beta_i = params['RGi'] / params['infectious_period']
         self.tau_p = (
-            params.SAPp * self.rpi * (2.0**params.eta))/(1.0 - params.SAPp)
+            params['SAPp'] * self.rpi * (2.0**params['eta'])) \
+            / (1.0 - params['SAPp'])
         self.tau_i = (
-            params.SAPi * self.rir * (2.0**params.eta))/(1.0-params.SAPi)
-
-        # 0.04 is approximately an hour timestep for the implicit Euler numerical method
-        self.h = 0.04
+            params['SAPi'] * self.rir * (2.0**params['eta'])) \
+            / (1.0-params['SAPi'])
         self.Imat = eye(*self.matrix_size)
-
-        self.trange = arange(0, 180, self.h)
-        self.tint = 10.0                     # Time at which we neglect imports
 
 class StrongHouseholdIsolationModel(HouseholdModel):
     '''Strong household isolation model assumes a compliant percentage of
     househods will isolate for a period of 14 days.'''
-    def __init__(self, setup, epsilon, alpha_c):
-        self.compliance = alpha_c
-        self.global_reduction = epsilon
-        self.setup = setup
-
-        self.prev = zeros(len(setup.trange))
-        self.pdi = zeros(len(setup.trange))     # Person-days in isolation
-        self.prav = zeros(setup.nmax)    # Probability of avoiding by household size
-
+    def __init__(self, setup):
+        super().__init__(setup)
+        alpha_c = setup['compliance']
+        epsilon = setup['global_reduction']
         Ipi = array([], dtype=int32)
         Jpi = array([], dtype=int32)
         Vpi = array([])
@@ -556,14 +515,14 @@ class StrongHouseholdIsolationModel(HouseholdModel):
             self.prev[ti] = (setup.jj @ q0)
             if t > 0:
                 self.pdi[ti] = \
-                        self.pdi[ti-1] + (setup.ff @ q0) * setup.h
+                        self.pdi[ti-1] + (setup.ff @ q0) * setup['h']
                 
             rse = \
-                irm * setup.import_rate \
+                irm * setup['import_rate'] \
                 + setup.beta_p * (setup.pp @ q0) \
                 + setup.beta_i * (setup.ii @ q0)
         
-            if setup.dist_start <= t <= setup.dist_end:
+            if setup.NPI_active(t):
                 rse = rse * (1.0 - epsilon)
             
             MM = \
@@ -574,16 +533,16 @@ class StrongHouseholdIsolationModel(HouseholdModel):
                 + setup.tau_p * setup.Mse_p \
                 + setup.tau_i * setup.Mse_i \
                 + setup.Mf
-            qh = spsolve(setup.Imat - setup.h * MM.T, q0)
+            qh = spsolve(setup.Imat - setup['h'] * MM.T, q0)
             q0 = qh
-            if (t >= setup.tint):
+            if t >= setup['tint']:
                 irm = 0.0
 
         for n in range(1, setup.nmax +1):
-            for s in range(0,n+1):
-                for e in range(0,n+1-s):
-                    for p in range(0,n+1-s-e):
-                        for i in range(0,n+1-s-e-p):
-                            for f in range(0,2):
+            for s in range(0, n+1):
+                for e in range(0, n+1-s):
+                    for p in range(0, n+1-s-e):
+                        for i in range(0, n+1-s-e-p):
+                            for f in range(0, 2):
                                 self.prav[n-1] += s * q0[setup.s2i[n-1,s,e,p,i,f]]
             self.prav[n-1] *= 1.0 / (n * setup.weights[n-1])
