@@ -8,17 +8,18 @@ readability.
 Note: some repetition is allowed for readability e.g. epsilon and alpha_c
 assignment are repeated in every constructor.
 '''
-from abc import ABC
+from abc import ABC, abstractmethod
+from copy import deepcopy
 from numpy import append, arange, array, int32, zeros
 from numpy import sum as nsum
 from numpy import max as nmax
 from scipy.sparse import csr_matrix, eye
 from scipy.sparse.linalg import spsolve
-from models.utils import DEFAULT_PARAMS
+from models.configs import DEFAULT_PARAMS
 
 class Setup(ABC):
     def __init__(self, params):
-        self.params = params
+        self.params = deepcopy(params)
         self.trange = arange(
             0, params['final_time'], params['h'])
 
@@ -30,7 +31,7 @@ class Setup(ABC):
 
     def NPI_active(self, t):
         '''Check if non-pharmaceutical interventions are active at time t'''
-        return self.params['npi_start'] <= t <= self.params['npi_end']
+        return self.params['npi']['start'] <= t <= self.params['npi']['end']
 
 
 class BasicModelSetup(Setup):
@@ -169,8 +170,8 @@ class BasicModelSetup(Setup):
 
 class HouseholdModel(ABC):
     def __init__(self, setup):
-        self.global_reduction = setup['global_reduction']
-        self.setup = setup
+        self.global_reduction = setup['npi']['global_reduction']
+        self.setup = deepcopy(setup)
 
         self.prev = zeros(len(setup.trange))
         self.pdi = zeros(len(setup.trange))     # Person-days in isolation
@@ -206,18 +207,24 @@ class HouseholdModel(ABC):
             label=label,
             c=colour)
 
+    @abstractmethod
+    def solve(self):
+        pass
+
 class IndividualIsolationModel(HouseholdModel):
     '''Individual isolation assumes that sympotomatic cases self-isolate and
     cease transmission outside of the household.
     '''
     def __init__(self, setup):
         super().__init__(setup)
-        alpha_c = setup['compliance']
-        epsilon = setup['global_reduction']
+
+    def solve(self):
+        alpha_c = self.setup['npi']['compliance']
+        epsilon = self.setup['npi']['global_reduction']
 
         irm = 1.0
         q0 = zeros(self.setup.imax)
-        for n in range(1, setup.nmax + 1):
+        for n in range(1, self.setup.nmax + 1):
             q0[self.setup.s2i[n-1, n, 0, 0, 0]] = self.setup.weights[n - 1]
         for ti, t in enumerate(self.setup.trange):
             self.prev[ti] = (self.setup.ii @ q0)
@@ -226,54 +233,56 @@ class IndividualIsolationModel(HouseholdModel):
                     self.pdi[ti-1] + (alpha_c * self.prev[ti]) * self.setup['h']
             rse = \
                 irm * self.setup['import_rate'] \
-                + setup.beta_p * (setup.pp @ q0) \
-                + (1.0 - alpha_c) * setup.beta_i * self.prev[ti]
+                + self.setup.beta_p * (self.setup.pp @ q0) \
+                + (1.0 - alpha_c) * self.setup.beta_i * self.prev[ti]
 
-            if setup.NPI_active(t):
+            if self.setup.NPI_active(t):
                 rse = rse * (1.0 - epsilon)
 
             MM = \
-                rse * setup.Mse \
-                + setup.rep * setup.Mep \
-                + setup.rpi * setup.Mpi \
-                + setup.rir * setup.Mir \
-                + setup.tau_p * setup.Mse_p \
-                + setup.tau_i * setup.Mse_i
-            qh = spsolve(setup.Imat - setup['h'] * MM.T, q0)
+                rse * self.setup.Mse \
+                + self.setup.rep * self.setup.Mep \
+                + self.setup.rpi * self.setup.Mpi \
+                + self.setup.rir * self.setup.Mir \
+                + self.setup.tau_p * self.setup.Mse_p \
+                + self.setup.tau_i * self.setup.Mse_i
+            qh = spsolve(self.setup.Imat - self.setup['h'] * MM.T, q0)
             q0 = qh
-            if t >= setup['tint']:
+            if t >= self.setup['tint']:
                 irm = 0.0
 
-        for n in range(1, setup.nmax+1):
+        for n in range(1, self.setup.nmax+1):
             for s in range(0,n+1):
                 for e in range(0,n+1-s):
                     for p in range(0,n+1-s-e):
                         for i in range(0,n+1-s-e-p):
-                            self.prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
-            self.prav[n - 1] *= 1.0 /(n * setup.weights[n-1])
+                            self.prav[n-1] += s * q0[self.setup.s2i[n-1, s, e, p, i]]
+            self.prav[n - 1] *= 1.0 /(n * self.setup.weights[n-1])
         
 class WeakHouseholdIsolationModel(HouseholdModel):
     '''Weak household isolation model assumes a compliant percentage of
     househods will isolate if there is at least one symptomatic case'''
     def __init__(self, setup):
         super().__init__(setup)
-        alpha_c = setup['compliance']
-        epsilon = setup['global_reduction']
+
+    def solve(self):
+        alpha_c = self.setup['npi']['compliance']
+        epsilon = self.setup['npi']['global_reduction']
 
         # Overwrite the susceptible to exposed matrix
         Ise = array([],dtype=int32)
         Jse = array([],dtype=int32)
         Vse = array([])
-        for n in range(1, setup.nmax + 1):
+        for n in range(1, self.setup.nmax + 1):
             for s in range(0,n+1):
                 for e in range(0,n+1-s):
                     for p in range(0,n+1-s-e):
                         for i in range(0,n+1-s-e-p):
-                            I = setup.s2i[n-1,s,e,p,i]
+                            I = self.setup.s2i[n-1,s,e,p,i]
                             if (s>0):
                                 Ise = append(Ise, I)
                                 Jse = append(
-                                    Jse, setup.s2i[n-1,s-1,e+1,p,i])
+                                    Jse, self.setup.s2i[n-1,s-1,e+1,p,i])
                                 if (i==0):
                                     val = float(s)
                                 else:
@@ -282,56 +291,55 @@ class WeakHouseholdIsolationModel(HouseholdModel):
                                 Ise = append(Ise, I)
                                 Jse = append(Jse, I)
                                 Vse = append(Vse, -val)  
-        Mse = csr_matrix((Vse, (Ise, Jse)), setup.matrix_size)
+        Mse = csr_matrix((Vse, (Ise, Jse)), self.setup.matrix_size)
             
         irm = 1.0
-        q0 = zeros(setup.imax)
-        for n in range(1,setup.nmax+1):
-            q0[setup.s2i[n-1,n,0,0,0]] = setup.weights[n-1]
-        for ti, t in enumerate(setup.trange):
-            self.prev[ti] = (setup.ii @ q0)
+        q0 = zeros(self.setup.imax)
+        for n in range(1,self.setup.nmax+1):
+            q0[self.setup.s2i[n-1,n,0,0,0]] = self.setup.weights[n-1]
+        for ti, t in enumerate(self.setup.trange):
+            self.prev[ti] = (self.setup.ii @ q0)
             if t > 0:
                 self.pdi[ti] = \
-                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * setup['h']
+                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * self.setup['h']
                 
             rse = \
-                irm * setup['import_rate'] \
+                irm * self.setup['import_rate'] \
                 + (1.0 - alpha_c) * (
-                    setup.beta_p * (setup.pp @ q0)
-                    + setup.beta_i*(self.prev[ti])) \
-                + alpha_c * setup.beta_p * (setup.ptilde @ q0)
+                    self.setup.beta_p * (self.setup.pp @ q0)
+                    + self.setup.beta_i*(self.prev[ti])) \
+                + alpha_c * self.setup.beta_p * (self.setup.ptilde @ q0)
         
-            if setup.NPI_active(t):
+            if self.setup.NPI_active(t):
                 rse = rse*(1.0 - epsilon)
             
             MM = \
                 rse * Mse \
-                + setup.rep * setup.Mep \
-                + setup.rpi * setup.Mpi \
-                + setup.rir * setup.Mir \
-                + setup.tau_p * setup.Mse_p \
-                + setup.tau_i * setup.Mse_i
-            qh = spsolve(setup.Imat - setup['h'] * MM.T, q0)
+                + self.setup.rep * self.setup.Mep \
+                + self.setup.rpi * self.setup.Mpi \
+                + self.setup.rir * self.setup.Mir \
+                + self.setup.tau_p * self.setup.Mse_p \
+                + self.setup.tau_i * self.setup.Mse_i
+            qh = spsolve(self.setup.Imat - self.setup['h'] * MM.T, q0)
             q0 = qh
-            if t >= setup['tint']:
+            if t >= self.setup['tint']:
                 irm = 0.0
 
-        for n in range(1, setup.nmax+1):
+        for n in range(1, self.setup.nmax+1):
             for s in range(0, n+1):
                 for e in range(0, n+1-s):
                     for p in range(0, n+1-s-e):
                         for i in range(0, n+1-s-e-p):
-                            self.prav[n-1] += s * q0[setup.s2i[n-1, s, e, p, i]]
-            self.prav[n-1] *= 1.0 / (n * setup.weights[n-1])
+                            self.prav[n-1] += s * q0[self.setup.s2i[n-1, s, e, p, i]]
+            self.prav[n-1] *= 1.0 / (n * self.setup.weights[n-1])
 
 class StrongHouseholdIsolationModelSetup(Setup):
     '''This object creates matrices for a household model with six indices:
     1. size         3. exposed      5. infected
-    2. susceptible  4. prodromal    6. quarantined
+    2. susceptible  4. prodromal    6. quarantined (yes/no)
     '''
     def __init__(self, params=DEFAULT_PARAMS):
         super().__init__(params)
-
         self.weights = params['pages'] / nsum(params['pages'])
         self.nmax = len(self.weights)
         self.nbar = self.weights @ arange(1, self.nmax + 1)
@@ -470,27 +478,29 @@ class StrongHouseholdIsolationModel(HouseholdModel):
     househods will isolate for a period of 14 days.'''
     def __init__(self, setup):
         super().__init__(setup)
-        alpha_c = setup['compliance']
-        epsilon = setup['global_reduction']
+
+    def solve(self):
+        alpha_c = self.setup['npi']['compliance']
+        epsilon = self.setup['npi']['global_reduction']
         Ipi = array([], dtype=int32)
         Jpi = array([], dtype=int32)
         Vpi = array([])
-        for n in range(1, setup.nmax+1):
+        for n in range(1, self.setup.nmax+1):
             for s in range(0,n+1):
                 for e in range(0,n+1-s):
                     for p in range(0,n+1-s-e):
                         for i in range(0,n+1-s-e-p):
                             for f in range(0,2):
-                                I = setup.s2i[n-1,s,e,p,i,f]
+                                I = self.setup.s2i[n-1,s,e,p,i,f]
                                 if (p>0):
                                     Ipi = append(Ipi, I)
                                     if ((f==0) and (i==0) and ((s+e+p)==n)):
-                                        Jpi = append(Jpi, setup.s2i[n-1,s,e,p-1,i+1,1])
+                                        Jpi = append(Jpi, self.setup.s2i[n-1,s,e,p-1,i+1,1])
                                         val = alpha_c*float(p)
                                         Vpi = append(Vpi,val)
 
                                         Ipi = append(Ipi,I)
-                                        Jpi = append(Jpi,setup.s2i[n-1,s,e,p-1,i+1,0])
+                                        Jpi = append(Jpi,self.setup.s2i[n-1,s,e,p-1,i+1,0])
                                         val = (1.0 - alpha_c)*float(p)
                                         Vpi = append(Vpi,val)
 
@@ -498,51 +508,51 @@ class StrongHouseholdIsolationModel(HouseholdModel):
                                         Jpi = append(Jpi,I)
                                         Vpi = append(Vpi,-float(p))
                                     else:
-                                        Jpi = append(Jpi,setup.s2i[n-1,s,e,p-1,i+1,f])
+                                        Jpi = append(Jpi,self.setup.s2i[n-1,s,e,p-1,i+1,f])
                                         val = float(p)
                                         Vpi = append(Vpi,val)
                                         Ipi = append(Ipi,I)
                                         Jpi = append(Jpi,I)
                                         Vpi = append(Vpi,-val)
-        Mpi = csr_matrix((Vpi, (Ipi, Jpi)), setup.matrix_size)
+        Mpi = csr_matrix((Vpi, (Ipi, Jpi)), self.setup.matrix_size)
             
         irm = 1.0
-        q0 = zeros(setup.imax)
-        for n in range(1, setup.nmax+1):
-            q0[setup.s2i[n-1,n,0,0,0,0]] = setup.weights[n-1]
+        q0 = zeros(self.setup.imax)
+        for n in range(1, self.setup.nmax+1):
+            q0[self.setup.s2i[n-1,n,0,0,0,0]] = self.setup.weights[n-1]
 
-        for ti, t in enumerate(setup.trange):
-            self.prev[ti] = (setup.jj @ q0)
+        for ti, t in enumerate(self.setup.trange):
+            self.prev[ti] = (self.setup.jj @ q0)
             if t > 0:
                 self.pdi[ti] = \
-                        self.pdi[ti-1] + (setup.ff @ q0) * setup['h']
+                        self.pdi[ti-1] + (self.setup.ff @ q0) * self.setup['h']
                 
             rse = \
-                irm * setup['import_rate'] \
-                + setup.beta_p * (setup.pp @ q0) \
-                + setup.beta_i * (setup.ii @ q0)
+                irm * self.setup['import_rate'] \
+                + self.setup.beta_p * (self.setup.pp @ q0) \
+                + self.setup.beta_i * (self.setup.ii @ q0)
         
-            if setup.NPI_active(t):
+            if self.setup.NPI_active(t):
                 rse = rse * (1.0 - epsilon)
             
             MM = \
-                rse * setup.Mse \
-                + setup.rep * setup.Mep \
-                + setup.rpi * Mpi \
-                + setup.rir * setup.Mir \
-                + setup.tau_p * setup.Mse_p \
-                + setup.tau_i * setup.Mse_i \
-                + setup.Mf
-            qh = spsolve(setup.Imat - setup['h'] * MM.T, q0)
+                rse * self.setup.Mse \
+                + self.setup.rep * self.setup.Mep \
+                + self.setup.rpi * Mpi \
+                + self.setup.rir * self.setup.Mir \
+                + self.setup.tau_p * self.setup.Mse_p \
+                + self.setup.tau_i * self.setup.Mse_i \
+                + self.setup.Mf
+            qh = spsolve(self.setup.Imat - self.setup['h'] * MM.T, q0)
             q0 = qh
-            if t >= setup['tint']:
+            if t >= self.setup['tint']:
                 irm = 0.0
 
-        for n in range(1, setup.nmax +1):
+        for n in range(1, self.setup.nmax +1):
             for s in range(0, n+1):
                 for e in range(0, n+1-s):
                     for p in range(0, n+1-s-e):
                         for i in range(0, n+1-s-e-p):
                             for f in range(0, 2):
-                                self.prav[n-1] += s * q0[setup.s2i[n-1,s,e,p,i,f]]
-            self.prav[n-1] *= 1.0 / (n * setup.weights[n-1])
+                                self.prav[n-1] += s * q0[self.setup.s2i[n-1,s,e,p,i,f]]
+            self.prav[n-1] *= 1.0 / (n * self.setup.weights[n-1])
