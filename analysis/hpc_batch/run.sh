@@ -14,11 +14,8 @@ while getopts r:l:f:n:F OPTION
 do
 case "${OPTION}"
 in
-l) LEVEL=${OPTARG};;
 f) FIRST=${OPTARG};;
 n) NO_OF_SIMS=${OPTARG};;
-r) RANDOM=${OPTARG};;
-F) GENERATOR_TYPE=full_rank;;
 esac
 done
 
