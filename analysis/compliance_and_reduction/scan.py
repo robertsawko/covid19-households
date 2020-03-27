@@ -11,9 +11,9 @@ from models.configs import DEFAULT_PARAMS
 if __name__ == '__main__':
     comply_range = linspace(0.0, 1.0, 6)
     globred_range = array([0.0, 0.25, 0.5, 0.75])
+    npi_types = ['individual', 'weak', 'strong']
 
     msg = 'Done global reduction range {0:d} of {1:d} and compliange range {2:d} of {3:d}'
-    npi_types = ['individual', 'weak', 'strong']
     configs=[]
     for npi_type npi_types:
         new_config = deepcopy(DEFAULT_PARAMS)

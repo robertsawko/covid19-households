@@ -7,7 +7,7 @@ from models.household import BasicModelSetup, IndividualIsolationModel
 from models.household import WeakHouseholdIsolationModel
 from models.household import StrongHouseholdIsolationModelSetup
 from models.household import StrongHouseholdIsolationModel
-from models.utils import DEFAULT_PARAMS
+from models.configs import DEFAULT_PARAMS
 
 class Test:
     def __init__(self, setup_class, model_class, repeats=1):
