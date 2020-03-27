@@ -51,5 +51,6 @@ SIMS_IN_BATCH=\$(( \\
 SIM0=\$((\${BATCH_FIRST_INDEX}+${FIRST}))
 python analysis/hpc_batch/scan.py \\
     --num_of_simulations \$SIMS_IN_BATCH \\
-    --sim0 \$SIM0
+    --sim0 \$SIM0 \\
+    --pool_siize ${CORES_PER_HOST}
 EOF

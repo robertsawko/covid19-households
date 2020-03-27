@@ -25,7 +25,8 @@ class Test:
         measurements = []
         for _ in range(repeats):
             start = time()
-            solution = model_class(setup)
+            model = model_class(setup)
+            model.solve()
             end = time()
             measurements.append(end-start)
         self.average_solve_time = mean(measurements)
