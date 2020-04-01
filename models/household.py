@@ -10,12 +10,24 @@ assignment are repeated in every constructor.
 '''
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from numpy import append, arange, array, int32, zeros
+from numpy import append, arange, array, int32, log, zeros
 from numpy import sum as nsum
 from numpy import max as nmax
 from scipy.sparse import csr_matrix, eye
 from scipy.sparse.linalg import spsolve
 from models.configs import DEFAULT_PARAMS
+
+class ModelCreator(ABC):
+    def __init__(self):
+        self.spec = None
+
+    def make(spec):
+        '''Build a model according to model specification'''
+        self.weights = array(spec['pages']) / nsum(spec['pages'])
+        self.nmax = len(self.weights)
+        self.nbar = self.weights @ arange(1, self.nmax + 1)
+
+        self.spec = spec
 
 class Setup(ABC):
     def __init__(self, params):
@@ -33,12 +45,46 @@ class Setup(ABC):
         '''Check if non-pharmaceutical interventions are active at time t'''
         return self.params['npi']['start'] <= t <= self.params['npi']['end']
 
+    def rescale_beta(self):
+        '''Solution of the Lotka-Euler equation to fix global transmission
+        from doubling time'''
+        ww = zeros(self.imax)
+        cc = []
+        for n in range(1, self.nmax + 1):
+            for s in range(0, n+1):
+                for e in range(0, n+1-s):
+                    for p in range(0, n+1-s-e):
+                        for i in range(0, n+1-s-e-p):
+                            I = self.s2i[n-1, s, e, p, i]
+
+                            if ((e==1) and (s==(n-1))):
+                                ww[I] = n * self.weights[n-1]
+
+                            if not ((e==0) and (p==0) and (i==0)):
+                                cc.append(I)
+        rr = log(2.0)/self.params['doubling_time']
+        MM = \
+            self.rep * self.Mep \
+            + self.rpi * self.Mpi \
+            + self.rir * self.Mir \
+            + self.tau_p * self.Mse_p \
+            + self.tau_i * self.Mse_i \
+            - rr * Imat
+        Qc = -(MM[:, cc][cc, :])
+        z = spsolve(
+            Qc,
+            self.beta_p * self.pp[cc] + self.beta_i * self.ii[cc])
+
+        beta_scale = 1.0/(z@ww[cc])
+
+        self.beta_i *= beta_scale
+        self.beta_p *= beta_scale
 
 class BasicModelSetup(Setup):
     '''This class produces matrix for a 5 compartment models'''
     def __init__(self, params=DEFAULT_PARAMS):
         super().__init__(params)
-        self.weights = params['pages'] / nsum(params['pages'])
+        self.weights = array(params['pages']) / nsum(params['pages'])
         self.nmax = len(self.weights)
         self.nbar = self.weights @ arange(1, self.nmax + 1)
 
@@ -154,28 +200,40 @@ class BasicModelSetup(Setup):
         self.Mpi = csr_matrix((Vpi, (Ipi, Jpi)), self.matrix_size)
         self.Mir = csr_matrix((Vir, (Iir, Jir)), self.matrix_size)
 
-        self.rep = 1.0 / params['latent_period']
-        self.rpi = 1.0 / params['prodrome_period']
-        self.rir = 1.0 / params['infectious_period']
-        self.beta_p = params['RGp'] / params['prodrome_period']
-        self.beta_i = params['RGi'] / params['infectious_period']
-        self.tau_p = (
-            params['SAPp'] * self.rpi * (2.0**self.params['eta'])) \
-            / (1.0 - params['SAPp'])
-        self.tau_i = (
-            params['SAPi'] * self.rir * (2.0**params['eta'])) \
-            / (1.0 - self.params['SAPi'])
+        # if 'doubling_time' in params:
+        #     self.rescale_beta()
 
-        self.Imat = eye(*self.matrix_size)
+    def create():
+        model = HouseholdModel()
+        pass
 
 class HouseholdModel(ABC):
     def __init__(self, setup):
-        self.global_reduction = setup['npi']['global_reduction']
         self.setup = deepcopy(setup)
 
         self.prev = zeros(len(setup.trange))
         self.pdi = zeros(len(setup.trange))     # Person-days in isolation
         self.prav = zeros(setup.nmax)           # Probability of avoiding by household size
+
+        self.rep = 1.0 / setup['latent_period']
+        self.rpi = 1.0 / setup['prodrome_period']
+        self.rir = 1.0 / setup['infectious_period']
+        self.beta_p = setup['RGp'] / setup['prodrome_period']
+        self.beta_i = setup['RGi'] / setup['infectious_period']
+        self.tau_p = (
+            setup['SAPp'] * self.rpi * (2.0**self.setup['eta'])) \
+            / (1.0 - setup['SAPp'])
+        self.tau_i = (
+            setup['SAPi'] * self.rir * (2.0**setup['eta'])) \
+            / (1.0 - self.setup['SAPi'])
+
+    def _initialise_common_vars(self):
+        return \
+            self.setup['npi']['compliance'], \
+            self.setup['npi']['global_reduction'], \
+            eye(*self.setup.matrix_size), \
+            self.setup['import_rate'], \
+            self.setup['h']
 
 
     def plot_cases(self, axes, label, colour):
@@ -219,8 +277,7 @@ class IndividualIsolationModel(HouseholdModel):
         super().__init__(setup)
 
     def solve(self):
-        alpha_c = self.setup['npi']['compliance']
-        epsilon = self.setup['npi']['global_reduction']
+        alpha_c, epsilon, Imat, Lambda, h = self._initialise_common_vars()
 
         irm = 1.0
         q0 = zeros(self.setup.imax)
@@ -230,23 +287,23 @@ class IndividualIsolationModel(HouseholdModel):
             self.prev[ti] = (self.setup.ii @ q0)
             if ti > 0:
                 self.pdi[ti] = \
-                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * self.setup['h']
+                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * h
             rse = \
-                irm * self.setup['import_rate'] \
-                + self.setup.beta_p * (self.setup.pp @ q0) \
-                + (1.0 - alpha_c) * self.setup.beta_i * self.prev[ti]
+                irm * Lambda \
+                + self.beta_p * (self.setup.pp @ q0) \
+                + (1.0 - alpha_c) * self.beta_i * self.prev[ti]
 
             if self.setup.NPI_active(t):
                 rse = rse * (1.0 - epsilon)
 
             MM = \
                 rse * self.setup.Mse \
-                + self.setup.rep * self.setup.Mep \
-                + self.setup.rpi * self.setup.Mpi \
-                + self.setup.rir * self.setup.Mir \
-                + self.setup.tau_p * self.setup.Mse_p \
-                + self.setup.tau_i * self.setup.Mse_i
-            qh = spsolve(self.setup.Imat - self.setup['h'] * MM.T, q0)
+                + self.rep * self.setup.Mep \
+                + self.rpi * self.setup.Mpi \
+                + self.rir * self.setup.Mir \
+                + self.tau_p * self.setup.Mse_p \
+                + self.tau_i * self.setup.Mse_i
+            qh = spsolve(Imat - h * MM.T, q0)
             q0 = qh
             if t >= self.setup['tint']:
                 irm = 0.0
@@ -266,8 +323,7 @@ class WeakHouseholdIsolationModel(HouseholdModel):
         super().__init__(setup)
 
     def solve(self):
-        alpha_c = self.setup['npi']['compliance']
-        epsilon = self.setup['npi']['global_reduction']
+        alpha_c, epsilon, Imat, Lambda, h = self._initialise_common_vars()
 
         # Overwrite the susceptible to exposed matrix
         Ise = array([],dtype=int32)
@@ -296,31 +352,31 @@ class WeakHouseholdIsolationModel(HouseholdModel):
         irm = 1.0
         q0 = zeros(self.setup.imax)
         for n in range(1,self.setup.nmax+1):
-            q0[self.setup.s2i[n-1,n,0,0,0]] = self.setup.weights[n-1]
+            q0[self.setup.s2i[n-1, n, 0, 0, 0]] = self.setup.weights[n-1]
         for ti, t in enumerate(self.setup.trange):
             self.prev[ti] = (self.setup.ii @ q0)
             if t > 0:
                 self.pdi[ti] = \
-                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * self.setup['h']
+                    self.pdi[ti-1] + (alpha_c * self.prev[ti]) * h
                 
             rse = \
-                irm * self.setup['import_rate'] \
+                irm * Lambda \
                 + (1.0 - alpha_c) * (
-                    self.setup.beta_p * (self.setup.pp @ q0)
-                    + self.setup.beta_i*(self.prev[ti])) \
-                + alpha_c * self.setup.beta_p * (self.setup.ptilde @ q0)
+                    self.beta_p * (self.setup.pp @ q0)
+                    + self.beta_i * (self.prev[ti])) \
+                + alpha_c * self.beta_p * (self.setup.ptilde @ q0)
         
             if self.setup.NPI_active(t):
-                rse = rse*(1.0 - epsilon)
+                rse = rse * (1.0 - epsilon)
             
             MM = \
                 rse * Mse \
-                + self.setup.rep * self.setup.Mep \
-                + self.setup.rpi * self.setup.Mpi \
-                + self.setup.rir * self.setup.Mir \
-                + self.setup.tau_p * self.setup.Mse_p \
-                + self.setup.tau_i * self.setup.Mse_i
-            qh = spsolve(self.setup.Imat - self.setup['h'] * MM.T, q0)
+                + self.rep * self.setup.Mep \
+                + self.rpi * self.setup.Mpi \
+                + self.rir * self.setup.Mir \
+                + self.tau_p * self.setup.Mse_p \
+                + self.tau_i * self.setup.Mse_i
+            qh = spsolve(Imat - h * MM.T, q0)
             q0 = qh
             if t >= self.setup['tint']:
                 irm = 0.0
@@ -460,19 +516,6 @@ class StrongHouseholdIsolationModelSetup(Setup):
         self.Mir = csr_matrix((Vir, (Iir, Jir)), self.matrix_size)
         self.Mf = csr_matrix((Vf, (If, Jf)), self.matrix_size)
 
-        self.rep = 1.0 / params['latent_period']
-        self.rpi = 1.0 / params['prodrome_period']
-        self.rir = 1.0 / params['infectious_period']
-        self.beta_p = params['RGp'] / params['prodrome_period']
-        self.beta_i = params['RGi'] / params['infectious_period']
-        self.tau_p = (
-            params['SAPp'] * self.rpi * (2.0**params['eta'])) \
-            / (1.0 - params['SAPp'])
-        self.tau_i = (
-            params['SAPi'] * self.rir * (2.0**params['eta'])) \
-            / (1.0-params['SAPi'])
-        self.Imat = eye(*self.matrix_size)
-
 class StrongHouseholdIsolationModel(HouseholdModel):
     '''Strong household isolation model assumes a compliant percentage of
     househods will isolate for a period of 14 days.'''
@@ -480,8 +523,8 @@ class StrongHouseholdIsolationModel(HouseholdModel):
         super().__init__(setup)
 
     def solve(self):
-        alpha_c = self.setup['npi']['compliance']
-        epsilon = self.setup['npi']['global_reduction']
+        alpha_c, epsilon, Imat, Lambda, h = self._initialise_common_vars()
+
         Ipi = array([], dtype=int32)
         Jpi = array([], dtype=int32)
         Vpi = array([])
@@ -525,25 +568,25 @@ class StrongHouseholdIsolationModel(HouseholdModel):
             self.prev[ti] = (self.setup.jj @ q0)
             if t > 0:
                 self.pdi[ti] = \
-                        self.pdi[ti-1] + (self.setup.ff @ q0) * self.setup['h']
+                    self.pdi[ti-1] + (self.setup.ff @ q0) * h
                 
             rse = \
-                irm * self.setup['import_rate'] \
-                + self.setup.beta_p * (self.setup.pp @ q0) \
-                + self.setup.beta_i * (self.setup.ii @ q0)
+                irm * Lambda \
+                + self.beta_p * (self.setup.pp @ q0) \
+                + self.beta_i * (self.setup.ii @ q0)
         
             if self.setup.NPI_active(t):
                 rse = rse * (1.0 - epsilon)
             
             MM = \
                 rse * self.setup.Mse \
-                + self.setup.rep * self.setup.Mep \
-                + self.setup.rpi * Mpi \
-                + self.setup.rir * self.setup.Mir \
-                + self.setup.tau_p * self.setup.Mse_p \
-                + self.setup.tau_i * self.setup.Mse_i \
+                + self.rep * self.setup.Mep \
+                + self.rpi * Mpi \
+                + self.rir * self.setup.Mir \
+                + self.tau_p * self.setup.Mse_p \
+                + self.tau_i * self.setup.Mse_i \
                 + self.setup.Mf
-            qh = spsolve(self.setup.Imat - self.setup['h'] * MM.T, q0)
+            qh = spsolve(Imat - h * MM.T, q0)
             q0 = qh
             if t >= self.setup['tint']:
                 irm = 0.0
