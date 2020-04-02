@@ -13,7 +13,8 @@ Content:
       HPC.
  * `manuscript` LaTeX write-up
  * `models` modular implementation of the models (work-in-progress)
- * `notebooks` full implementation of the models in a notebook form.
+ * `notebooks` full implementation of the models in a notebook form. These
+   serve as prototypes for later *production* implemenntation.
 
 ## Prerequisites
 

@@ -46,14 +46,14 @@ def plot_from_dill(suffix=''):
         axes.set_xlabel('Time (days)')
         axes.set_ylabel('Number of Cases')
         axes.title.set_text('Global Reduction {:.0f}%'.format(
-            100*baseline.global_reduction))
+            100*baseline.setup['npi']['global_reduction']))
         axes = axis[ig, 1]
         for ic in range(len(models) - 1, 0, -1):
             m=models[ic]
             m.plot_person_days_of_isolation(
                 axes,
                 label='{:.0f}%'.format(100 * m.setup['npi']['compliance']),
-                colour=[0.3, 0.3, 0.3 + (0.7*m.setup['npi']['compliance'])])
+                colour=[0.3, 0.3, 0.3 + (0.7 * m.setup['npi']['compliance'])])
             persdays[ig, ic] = m.persdays
         baseline.plot_person_days_of_isolation(
             axes,
@@ -66,7 +66,8 @@ def plot_from_dill(suffix=''):
             axes.legend(bbox_to_anchor=(1.04, 1), loc='upper left', title='Compliance')                                                          
         axes.set_xlabel('Time (days)')
         axes.set_ylabel('Person-Days Isolation')
-        axes.title.set_text('Global Reduction {:.0f}%'.format(100*baseline.global_reduction))
+        axes.title.set_text('Global Reduction {:.0f}%'.format(
+            100*baseline.setup['npi']['global_reduction']))
     fig.tight_layout()
     fig.savefig('./time_series{0}.pdf'.format(suffix))
 
@@ -76,7 +77,8 @@ def plot_from_dill(suffix=''):
         axis[0].plot(
             comply_range,
             percred[ig,:],
-            label='{:.0f}%'.format(100*models[0].global_reduction))
+            label='{:.0f}%'.format(
+                100*models[0].setup['npi']['global_reduction']))
     axis[0].set_xlabel('Compliance with Isolation')
     axis[0].set_ylabel('Percentage of Baseline peak')
     axis[0].title.set_text('Individual isolation: Mitigation')
@@ -94,13 +96,13 @@ def plot_from_dill(suffix=''):
     fig.savefig('./mit_costs{0}.pdf'.format(suffix))
 
     fig, axis = subplots(2, 4, figsize=(10,4))
-    for n in range(1, unmitigated.setup.nmax+1):
+    for n in range(1, unmitigated.nmax+1):
         axes = axis[(n - 1)//4, (n - 1)%4]
         for models in gr_runs:
             axes.plot(
                 comply_range,
                 [m.prav[n-1] for m in models],
-                label='{:.0f}%'.format(100*models[0].global_reduction))
+                label='{:.0f}%'.format(100*models[0].setup['npi']['global_reduction']))
             axes.set_xlim([0, 1.0])
             axes.set_ylim([0,0.5])
             axes.set_xlabel('Compliance')
