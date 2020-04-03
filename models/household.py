@@ -127,6 +127,7 @@ class FiveClassModel(HouseholdModel):
                             if not ((e==0) and (p==0) and (i==0)):
                                 cc.append(I)
         rr = log(2.0)/self.spec['doubling_time']
+        Imat = eye(*self.matrix_size)
         MM = \
             self.rep * self.Mep \
             + self.rpi * self.Mpi \
