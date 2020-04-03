@@ -1,18 +1,18 @@
 from numpy import array
 from json import dump, load
 from models.configs import DEFAULT_PARAMS
-from models.household import IndividualIsolationModelBuilder
-from models.household import WeakHouseholdIsolationModelBuilder
-from models.household import StrongHouseholdIsolationModelBuilder
+from models.household import IndividualIsolationModel
+from models.household import WeakHouseholdIsolationModel
+from models.household import StrongHouseholdIsolationModel
 
 def from_dict(spec):
     '''Create a household model from a Python dictionary'''
-    type_to_builder = {
-        'individual': IndividualIsolationModelBuilder(),
-        'weak': WeakHouseholdIsolationModelBuilder(),
-        'strong': StrongHouseholdIsolationModelBuilder()
+    type_to_constructor = {
+        'individual': IndividualIsolationModel,
+        'weak': WeakHouseholdIsolationModel,
+        'strong': StrongHouseholdIsolationModel
     }
-    return type_to_builder[spec['npi']['type']].build(spec)
+    return type_to_constructor[spec['npi']['type']](spec)
 
 def from_json(fname):
     '''Create a household model from a JSON file'''
