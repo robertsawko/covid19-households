@@ -5,8 +5,8 @@
 from copy import deepcopy
 from numpy import array, linspace
 from dill import dump
-from models.utils import setup_from_dict, from_setup
-from models.configs import DEFAULT_PARAMS
+from models.utils import from_dict
+from models.configs import DEFAULT_PARAMS as SPEC
 
 if __name__ == '__main__':
     comply_range = linspace(0.0, 1.0, 6)
@@ -14,26 +14,22 @@ if __name__ == '__main__':
     npi_types = ['individual', 'weak', 'strong']
 
     msg = 'Done global reduction range {0:d} of {1:d} and compliange range {2:d} of {3:d}'
-    configs=[]
-    for npi_type npi_types:
-        new_config = deepcopy(DEFAULT_PARAMS)
-        new_config['npi']['type'] = npi_type
-        configs.append(new_config)
-    setups = {c['npi']['type']: setup_from_dict(c) for c in configs}
-    results = {s: [] for s in setups.keys()}
+    results = {s: [] for s in npi_types}
 
     for ig, g in enumerate(globred_range):
-        partial_results = {s: [] for s in setups.keys()}
+        partial_results = {s: [] for s in npi_types}
         for ic, c in enumerate(comply_range):
-            for isolation in setups.keys():
-                m = from_setup(setups[isolation])
-                m.setup['npi']['compliance'] = c
-                m.setup['npi']['global_reduction'] = g
-                m.solve()
-                partial_results[isolation].append(m)
+            for npi_type in npi_types:
+                spec = deepcopy(SPEC)
+                spec['npi']['type'] = npi_type
+                spec['npi']['compliance'] = c
+                spec['npi']['global_reduction'] = g
+                model = from_dict(spec)
+                model.solve()
+                partial_results[npi_type].append(model)
             print(msg.format(ig + 1, len(globred_range), ic + 1, len(comply_range)))
-        for isolation in setups.keys():
-            results[isolation].append(partial_results[isolation])
+        for npi_type in npi_types:
+            results[npi_type].append(partial_results[npi_type])
 
     suffix_and_result = [
         ('', results['individual']),

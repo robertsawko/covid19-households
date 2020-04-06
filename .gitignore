@@ -6,3 +6,5 @@ __pycache__
 *.fls
 *.log
 *.pkl
+*.bbl
+*.blg
