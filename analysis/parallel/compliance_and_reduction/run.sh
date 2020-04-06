@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script is to be run from the main directory of the repo.
+# NOTE: This script is to be run from the main directory of the repo.
 
 ml purge
 ml Community 2> /dev/null
@@ -23,6 +23,7 @@ bsub << EOF
 #BSUB -W 2:00
 #BSUB -g /covid/households
 
+ulimit -s 10240
 mpirun \\
     python analysis/parallel/compliance_and_reduction/scan.py
 EOF
