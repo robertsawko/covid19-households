@@ -2,7 +2,7 @@
 from os.path import join
 from copy import deepcopy
 from mpi4py import MPI
-from h5py import File
+from h5py import File, Empty
 from models.utils import from_dict
 
 class ParallelExecutionToHDF5:
@@ -38,7 +38,16 @@ class ParallelExecutionToHDF5:
                 'prev',
                 shape=(no_of_time_steps,),
                 dtype='f', )
+            group.attrs.create('Npop', spec['Npop'])
+            group.create_dataset('nbar', shape=(1,), dtype='f')
             # TODO: add more variables/arrays here
+
+    def _store_computed_vars(self, f, idx, model):
+        group = f[self.key_pattern_fmt.format(idx)]
+        group['nbar'][:] = model.nbar
+        group['prev'][:] = model.prev
+        group['time'][:] = model.trange
+        # TODO: add more variables/arrays here
 
     def execute(self):
         comm = MPI.COMM_WORLD
@@ -59,9 +68,7 @@ class ParallelExecutionToHDF5:
                 rank, comm.size, idx, len(self.design_of_experiment)))
             model = from_dict(self.specs[idx])
             model.solve()
-            f[join(self.key_pattern_fmt.format(idx), 'prev')][:] = model.prev
-            f[join(self.key_pattern_fmt.format(idx), 'time')][:] = model.trange
-            # TODO: add more variables/arrays here
+            self._store_computed_vars(f, idx, model)
 
 
         print('Process {0}/{1} at the barrier'.format(rank, comm.size))

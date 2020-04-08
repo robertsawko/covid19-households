@@ -15,7 +15,7 @@ JOB_NAME=compliance_and_reduction
 
 bsub << EOF
 #BSUB -J ${JOB_NAME}
-#BSUB -q normal
+#BSUB -q tuleta
 #BSUB -oo ${JOB_NAME}.txt
 #BSUB -n $NUM_OF_CORES
 #BSUB -R "span[ptile=$CORES_PER_HOST]"

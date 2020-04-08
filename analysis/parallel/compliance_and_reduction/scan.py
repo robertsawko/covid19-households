@@ -20,5 +20,13 @@ if __name__ == '__main__':
             durations)),
         columns = ['Compliance', 'Global reduction', 'Type', 'Duration'])
 
-    my_parallel_run = ParallelExecutionToHDF5(SPEC, doe, 'outputs.h5')
+    def record2spec(record, spec):
+        spec['npi']['type'] = record['Type']
+        spec['npi']['end'] = spec['npi']['start'] + record['Duration']
+        spec['npi']['compliance'] = record['Compliance']
+        spec['npi']['global_reduction'] = record['Global reduction']
+        return spec
+
+    my_parallel_run = ParallelExecutionToHDF5(
+        SPEC, doe, record2spec, 'compliance_and_reduction.h5')
     my_parallel_run.execute()
