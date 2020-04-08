@@ -11,6 +11,16 @@ class TimeSeries:
     def __init__(self, idx, hdf_file):
         self.prev = hdf_file['run{0:03d}'.format(idx) + '/prev'][:]
         self.time = hdf_file['run{0:03d}'.format(idx) + '/time'][:]
+        self.Npop = hdf_file['run{0:03d}'.format(idx)].attrs['Npop']
+        self.nbar = hdf_file['run{0:03d}'.format(idx) + '/nbar'][:]
+
+    @property
+    def max(self):
+        return(nmax(self.prev))
+
+    @property
+    def cases(self):
+        return self.Npop / self.nbar * self.prev
 
 if __name__ == '__main__':
     file_name = 'lockdown.h5'
@@ -35,20 +45,23 @@ if __name__ == '__main__':
             for idx_c, ts in enumerate(time_series):
                 compliance = model_gr_subset.loc[indices[idx_c]]['Compliance']
                 axes.plot(
-                    ts.time, ts.prev,
+                    ts.time, ts.cases,
                     label='{:.0f}% compliance'.format(
                         100 * compliance),
                     color=[0.5, 0.5, 0.5+0.5*(compliance-0.65)/(0.8-0.65)])
             # baseline = time_series[0]
-            axes.title.set_text('Global Reduction {:.0f}%'.format(
-                100*model_gr_subset.iloc[0]['Global reduction']))
+            axes.set_title(
+                'Global reduction {:.0f}%'.format(
+                    100*model_gr_subset.iloc[0]['Global reduction']),
+                size=10)
             #axes.plot(
                 #baseline.time, baseline.prev,
                 #label='Baseline',
                 #color=[0, 0, 0])
             #yup = 1.05 * unmitigated.peak_value
             #npi_start, npi_end = baseline.setup['npi']['start'], baseline.setup['npi']['end']
-            #axes.plot([npi_start, npi_start], [0, yup], ls='--', c='k')
+            yup = 0.04
+            axes.plot([40, 40], [-1e-4, yup], ls='--', c='k')
             #axes.plot([npi_end, npi_end], [0, yup], ls='--', c='k')
             #axes.set_xlim([0, baseline.setup['final_time']])
             #axes.set_ylim([0, yup])
