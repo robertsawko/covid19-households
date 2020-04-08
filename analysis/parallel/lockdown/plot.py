@@ -22,11 +22,7 @@ class TimeSeries:
     def cases(self):
         return self.Npop / self.nbar * self.prev
 
-if __name__ == '__main__':
-    file_name = 'lockdown.h5'
-    doe = read_hdf(file_name, key='design_of_experiment')
-    f = File(file_name, 'r')
-
+def plot(f, doe):
     durations = list(doe.groupby('Lockdown duration').count().index)
     global_reductions = list(doe.groupby('Global reduction').count().index)
     fig, axis = subplots(
@@ -60,11 +56,11 @@ if __name__ == '__main__':
                 #color=[0, 0, 0])
             #yup = 1.05 * unmitigated.peak_value
             #npi_start, npi_end = baseline.setup['npi']['start'], baseline.setup['npi']['end']
-            yup = 0.04
-            axes.plot([40, 40], [-1e-4, yup], ls='--', c='k')
+            yup = 2.0e6
+            axes.plot([40, 40], [0, yup], ls='--', c='k')
             #axes.plot([npi_end, npi_end], [0, yup], ls='--', c='k')
             #axes.set_xlim([0, baseline.setup['final_time']])
-            #axes.set_ylim([0, yup])
+            axes.set_ylim([0, yup])
             axes.set_xlabel('Time (days)')
             axes.set_ylabel('Number of Cases')
                 
@@ -74,7 +70,19 @@ if __name__ == '__main__':
         ncol=4, loc='lower center', bbox_to_anchor=(0.5,0.0))
     fig.tight_layout()
     fig.subplots_adjust(bottom=0.1)
-    fig.savefig('./lockdown.pdf')
+    return fig
+
+if __name__ == '__main__':
+    file_name = 'lockdown.h5'
+    doe = read_hdf(file_name, key='design_of_experiment')
+    f = File(file_name, 'r')
+
+    sapis = list(doe.groupby('SAPi').count().index)
+
+    for sapi in sapis:
+        fig = plot(f, doe[doe['SAPi'] == sapi])
+        fig.savefig('./lockdown-sapi{0:0.02f}.pdf'.format(sapi))
+
     f.close()
 
 
