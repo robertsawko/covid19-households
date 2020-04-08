@@ -11,7 +11,7 @@ export PYTHONPATH=$(pwd):$PYTHONPATH
 NUM_OF_CORES=40
 CORES_PER_HOST=20
 
-JOB_NAME=compliance_and_reduction
+JOB_NAME=lockdown
 
 bsub << EOF
 #BSUB -J ${JOB_NAME}
@@ -25,5 +25,5 @@ bsub << EOF
 
 ulimit -s 10240
 mpirun \\
-    python analysis/parallel/compliance_and_reduction/scan.py
+    python analysis/parallel/lockdown/scan.py
 EOF
