@@ -13,39 +13,39 @@ class TimeSeries:
         self.time = hdf_file['run{0:03d}'.format(idx) + '/time'][:]
 
 if __name__ == '__main__':
-    file_name = 'outputs.hdf5'
+    file_name = 'lockdown.h5'
     doe = read_hdf(file_name, key='design_of_experiment')
     f = File(file_name, 'r')
 
-    npi_types = list(doe.groupby('Type').count().index)
+    durations = list(doe.groupby('Lockdown duration').count().index)
     global_reductions = list(doe.groupby('Global reduction').count().index)
     fig, axis = subplots(
-        len(global_reductions), len(npi_types), figsize=(8, 3.75))
+        len(global_reductions), len(durations),
+        figsize=(8, 8),
+        sharey=True)
 
-    unmitigated = TimeSeries(0, f)
-    for idx_im, im in enumerate(npi_types):
-        model_subset = doe[doe['Type'] == im]
+    for idx_d, d in enumerate(durations):
+        model_subset = doe[doe['Lockdown duration'] == d]
         for idx_g, g in enumerate(global_reductions):
-            axes = axis[idx_g, idx_im]
+            axes = axis[idx_g, idx_d]
             model_gr_subset = model_subset[model_subset['Global reduction'] == g]
             indices = list(
                 model_gr_subset.sort_values(by='Compliance').index)
             time_series = [TimeSeries(i, f) for i in indices]
-            for ts in reversed(time_series[1:]):
+            for idx_c, ts in enumerate(time_series):
+                compliance = model_gr_subset.loc[indices[idx_c]]['Compliance']
                 axes.plot(
-                    ts.time, ts.prev)
-                    # label='{:.0f}% compliance'.format(
-                        # 100*m.setup['npi']['compliance']),
-                    # colour=[0.5, 0.5, 0.5+(0.5*m.setup['npi']['compliance'])])
-            baseline = time_series[0]
-            # axes.title.set_text('Global Reduction {:.0f}%'.format(
-                # 100*baseline.setup['npi']['global_reduction']))
-            # import pdb
-            # pdb.set_trace()
-            axes.plot(
-                baseline.time, baseline.prev,
-                label='Baseline',
-                color=[0, 0, 0])
+                    ts.time, ts.prev,
+                    label='{:.0f}% compliance'.format(
+                        100 * compliance),
+                    color=[0.5, 0.5, 0.5+0.5*(compliance-0.65)/(0.8-0.65)])
+            # baseline = time_series[0]
+            axes.title.set_text('Global Reduction {:.0f}%'.format(
+                100*model_gr_subset.iloc[0]['Global reduction']))
+            #axes.plot(
+                #baseline.time, baseline.prev,
+                #label='Baseline',
+                #color=[0, 0, 0])
             #yup = 1.05 * unmitigated.peak_value
             #npi_start, npi_end = baseline.setup['npi']['start'], baseline.setup['npi']['end']
             #axes.plot([npi_start, npi_start], [0, yup], ls='--', c='k')
@@ -55,8 +55,13 @@ if __name__ == '__main__':
             axes.set_xlabel('Time (days)')
             axes.set_ylabel('Number of Cases')
                 
+    handles, labels = axes.get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        ncol=4, loc='lower center', bbox_to_anchor=(0.5,0.0))
     fig.tight_layout()
-    fig.savefig('./time_series_all.pdf')
+    fig.subplots_adjust(bottom=0.1)
+    fig.savefig('./lockdown.pdf')
     f.close()
 
 

@@ -36,5 +36,5 @@ if __name__ == '__main__':
 
     SPEC['npi']['type'] = 'weak'
     my_parallel_run = ParallelExecutionToHDF5(
-        SPEC, doe, record2spec, 'outputs.h5')
+        SPEC, doe, record2spec, 'lockdown.h5')
     my_parallel_run.execute()
