@@ -16,18 +16,25 @@ if __name__ == '__main__':
     comply_range = linspace(0.65,0.8,4)
     globred_range = linspace(0.65,0.8,4)
     lockdown_durations = array([21.0, 90.0, 180.0])
+    SAPi_range = array([0.4, 0.6, 0.8, 0.9])
 
     doe = DataFrame(
         list(product(
             comply_range,
             globred_range,
-            lockdown_durations)),
+            lockdown_durations,
+            SAPi_range)),
         columns = [
             'Compliance',
             'Global reduction',
-            'Lockdown duration'])
+            'Lockdown duration',
+            'SAPi'])
 
     def record2spec(record, spec):
+        p2i = 0.5
+        sapi = record['SAPi']
+        spec['SAPi'] = sapi
+        spec['SAPp'] = p2i * sapi
         spec['npi']['end'] = spec['npi']['start'] + record['Lockdown duration']
         spec['final_time'] = spec['npi']['start'] + record['Lockdown duration']
         spec['npi']['compliance'] = record['Compliance']
