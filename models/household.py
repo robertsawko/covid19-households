@@ -17,6 +17,12 @@ from scipy.sparse import csr_matrix, eye
 from scipy.sparse.linalg import spsolve
 from models.configs import DEFAULT_PARAMS
 
+
+class State:
+    def __init__(self, t):
+        self.t = t
+        self.q = zeros(0)
+
 class HouseholdModel(ABC):
     def __init__(self, spec):
         self.spec = deepcopy(spec)
@@ -48,6 +54,12 @@ class HouseholdModel(ABC):
         if 'doubling_time' in spec:
             self._rescale_beta()
 
+        self.states = {
+            'at_lockdown': State(spec['npi']['start']),
+            'after_lockdown': State(spec['npi']['end'])}
+        for n in arange(42, 21+180, 21, dtype=int):
+            self.states['{0}d'.format(n)] = State(n)
+
     @abstractmethod
     def _rescale_beta(self):
         pass
@@ -64,6 +76,10 @@ class HouseholdModel(ABC):
             self.spec['import_rate'], \
             self.spec['h']
 
+    def save_state(self, t, q0):
+        for s, v in self.states.items():
+            if v.t == t:
+                v.q = q0
 
     def plot_cases(self, axes, label, colour):
         axes.plot(
@@ -383,6 +399,7 @@ class WeakHouseholdIsolationModel(FiveClassModel):
             q0 = qh
             if t >= self.spec['tint']:
                 irm = 0.0
+            self.save_state(t, q0)
 
         for n in range(1, self.nmax+1):
             for s in range(0, n+1):
